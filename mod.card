@@ -9,7 +9,7 @@ return {
       "Move-forgetting, Mimic and PP-item move pickers",
     },
     added = {
-      "Chamfered type-coloured move buttons built from the game's named palettes",
+      "Chamfered move buttons using an exact reference-derived type palette",
       "A responsive move-only two-by-two grid with PP/type details and a Game-controlled fallback",
       "Optional arrow and circle effectiveness indicators on responsive battle move buttons",
       "A dominant black selected frame with a raised focus state",
@@ -17,7 +17,7 @@ return {
       "Three-letter type labels on the summary move page",
     },
     known = {
-      "Unknown custom types use the neutral MEWMON palette",
+      "Unknown custom types use the neutral Normal palette",
       "Active custom world renderers retain their own battle surface and background",
       "Uses engine_internals to augment built-in menu drawing without replacing move behavior",
     },

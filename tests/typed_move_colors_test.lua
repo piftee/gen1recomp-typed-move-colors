@@ -101,6 +101,39 @@ T.eq(inputPatch.navigate(1, 4, "right"), 2,
   "the detached panel maps RIGHT across its first row")
 T.eq(inputPatch.navigate(2, 4, "down"), 4,
   "the detached panel maps DOWN into its second row")
+
+local referenceColors = {
+  NORMAL = { 144, 152, 162 }, FIGHTING = { 206, 63, 107 },
+  FLYING = { 143, 168, 222 }, POISON = { 171, 106, 200 },
+  GROUND = { 217, 119, 70 }, ROCK = { 201, 182, 139 },
+  BUG = { 144, 192, 44 }, GHOST = { 82, 105, 173 },
+  FIRE = { 254, 156, 85 }, WATER = { 77, 144, 214 },
+  GRASS = { 101, 188, 94 }, ELECTRIC = { 244, 210, 59 },
+  PSYCHIC_TYPE = { 249, 113, 119 }, ICE = { 115, 206, 191 },
+  DRAGON = { 9, 109, 195 }, DARK = { 91, 82, 101 },
+  FAIRY = { 236, 144, 231 }, STEEL = { 91, 142, 161 },
+}
+for typeId, expected in pairs(referenceColors) do
+  local actual = inputPatch.colorsFor(game, typeId)[3]
+  T.check(actual[1] == expected[1] and actual[2] == expected[2]
+      and actual[3] == expected[3],
+    typeId .. " uses the exact supplied reference colour")
+end
+local selectedFire = inputPatch.colorsFor(game, "FIRE")[2]
+T.check(selectedFire[1] == 254 and selectedFire[2] == 186
+    and selectedFire[3] == 136,
+  "selected cards derive a consistent lighter shade from the reference")
+local unknownColor = inputPatch.colorsFor(game, "CUSTOM_TYPE")[3]
+T.check(unknownColor[1] == 144 and unknownColor[2] == 152
+    and unknownColor[3] == 162,
+  "unknown content-mod types fall back to the reference Normal colour")
+PaletteFX.setMode("og")
+T.eq(inputPatch.colorsFor(game, "FIRE"), PaletteFX.GRAYS,
+  "monochrome display mode still replaces the custom palette")
+PaletteFX.setMode("classic")
+T.eq(inputPatch.colorsFor(game, "FIRE"), PaletteFX.CLASSIC,
+  "Classic display mode still replaces the custom palette")
+PaletteFX.setMode("gbc")
 rows[3].step(game, 1)
 T.eq(BattleState.wideLayout(layoutProbe), false,
   "GAME mode restores the engine's saved battle-layout preference")
@@ -235,6 +268,10 @@ T.eq(#marks, 0,
   "the finished-frame panel does not write stale canvas palette marks")
 T.eq(cardLayers[5].color[1], 0,
   "the detached selected move also uses the black focus rim")
+T.check(cardLayers[3].color[1] == 254 / 255
+    and cardLayers[3].color[2] == 156 / 255
+    and cardLayers[3].color[3] == 85 / 255,
+  "the unselected Fire card face renders with the exact reference colour")
 local sawPP, sawSelectedPP = false, false
 for _, call in ipairs(text) do
   if call.value == "PP" then sawPP = true end

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1 - 2026-08-08
+
+- Replaced the approximate named-palette type colours with exact fills sampled from the supplied type reference.
+- Added matching Dark, Fairy and Steel colours for content mods that register later-generation types.
+- Derived a brighter selected shade from each reference colour while keeping the default bold face exact.
+- Preserved OG Red, OG Blue, OG Yellow, monochrome, inverted and Classic display-mode behaviour.
+
 ## 0.3.0 - 2026-08-08
 
 - Added optional geometric effectiveness indicators to responsive battle move buttons.
