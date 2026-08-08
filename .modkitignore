@@ -1,0 +1,4 @@
+tests/typed_move_colors_test.lua
+tests/preview_driver.lua
+.gitignore
+.github/

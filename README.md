@@ -1,0 +1,106 @@
+# Typed Move Colors
+
+Typed Move Colors turns each move into a chamfered type-coloured button while
+retaining Pokémon Red, Blue and Yellow's original font and named palettes. Its
+layered rim, offset shadow and bright selected state mirror Modern Party UI's
+party cards, but the mod also works independently.
+
+## Install
+
+1. Download the `.zip` from the
+   [latest release](https://github.com/piftee/gen1recomp-typed-move-colors/releases/latest).
+2. Open Gen1Recomp and select **MODS → Import mod .zip**. You can also drag the
+   downloaded ZIP onto the launcher window on desktop.
+3. Enable **Typed Move Colors**, then open your game.
+
+The ZIP contains only the mod. You still need your own legally obtained Pokémon
+Red, Blue, or Yellow ROM imported into
+[Gen1Recomp](https://github.com/bryanthaboi/gen1recomp).
+
+## Where colours appear
+
+- classic and widescreen battle move selection
+- Mimic's move picker
+- the Pokémon summary's moves and PP page
+- the move-forgetting screen
+- Ether, Max Ether and PP Up move selection
+
+The mod reads every move from Gen1Recomp's live merged move registry. Changes
+from balance mods, renamed moves and newly registered moves are respected.
+
+## Settings
+
+The following rows appear in the game's normal **OPTIONS** menu and in the
+mod's own options page:
+
+| Setting | Choices |
+| --- | --- |
+| Move Battle | On or off |
+| Move Layout | Wide or game |
+| Move Menus | On or off |
+| Move Tint | Bold or soft |
+
+Move Layout defaults to **Wide**. If Gen1Recomp is already using its wide
+battle renderer, the mod decorates that grid. Otherwise the mod adds a
+responsive move-only two-by-two panel after the battlefield has been drawn.
+The complete selector scales uniformly to nearly the full screen width and
+occupies the bottom band beneath the battling Pokémon. Pokémon with one or two
+moves use full-height buttons; three or four moves use the two-by-two grid. The
+background, sprites and battle HUD remain owned by the game or another renderer
+such as a staged voxel battle. **Game** restores the engine's original compact
+move list whenever its own Battle Layout setting is `OG`.
+
+Bold mirrors Modern Party UI: unselected buttons use the strong type shade,
+while the selected button becomes bright with dark text. Soft keeps every face
+on the lighter shade and relies on its selection rail and rim for focus.
+
+## Type palette mapping
+
+The mod ships no image or ROM assets. Types are mapped to existing named
+palettes such as REDMON, BLUEMON, GREENMON, YELLOWMON, CYANMON, PURPLEMON,
+BROWNMON, PINKMON and GRAYMON. Display modes such as monochrome and inverted
+colours still apply.
+
+## Development
+
+Clone this repository into the `mods` directory of a Gen1Recomp checkout:
+
+```sh
+git clone https://github.com/piftee/gen1recomp-typed-move-colors.git \
+  mods/typed_move_colors
+```
+
+Then run:
+
+```sh
+python3 tools/modkit.py validate typed_move_colors --base auto
+luajit mods/typed_move_colors/tests/typed_move_colors_test.lua
+love . --developer
+```
+
+Import a legally obtained canonical US Red, Blue or Yellow ROM on first launch.
+
+## Compatibility
+
+Typed Move Colors changes presentation only. It does not replace move records,
+effects, PP, damage, targeting or battle input. Mods that add or alter moves are
+resolved at draw time. Unknown custom types fall back to a neutral palette.
+
+The Wide setting never enables or replaces Gen1Recomp's battlefield renderer.
+Over an `OG` or custom-rendered battle, it removes only the old move-menu pixels
+from the transparent UI layer and draws its grid after the final battlefield
+composition. Directional input is mapped to the same two-by-two arrangement;
+native PP validation and move execution remain unchanged.
+
+## Distribution
+
+From the Gen1Recomp repository root:
+
+```sh
+python3 tools/modkit.py lint typed_move_colors
+python3 tools/modkit.py pack typed_move_colors -o Typed-Move-Colors.zip
+```
+
+The package contains no ROM-derived assets. Source code is available under the
+[MIT License](LICENSE). Pokémon and related names and imagery are trademarks of
+their respective owners; this is an unofficial fan-made mod.

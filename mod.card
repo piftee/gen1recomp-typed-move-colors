@@ -1,0 +1,28 @@
+return {
+  summary = "Gen 1-native type colours for moves across battles and menus.",
+  author = "ishhodaszi",
+  tags = { "ui", "battle", "quality-of-life", "cosmetic" },
+  differences = {
+    changed = {
+      "Battle move selection in classic and widescreen layouts",
+      "Pokémon summary move rows and PP readouts",
+      "Move-forgetting, Mimic and PP-item move pickers",
+    },
+    added = {
+      "Chamfered type-coloured move buttons built from the game's named palettes",
+      "A responsive move-only two-by-two grid with PP/type details and a Game-controlled fallback",
+      "A dominant black selected frame with a raised focus state",
+      "Battle, layout, menu and tint-strength settings in the main Options screen",
+      "Three-letter type labels on the summary move page",
+    },
+    known = {
+      "Unknown custom types use the neutral MEWMON palette",
+      "Active custom world renderers retain their own battle surface and background",
+      "Uses engine_internals to augment built-in menu drawing without replacing move behavior",
+    },
+  },
+  credits = {
+    { who = "Gen1Recomp", for_ = "mod platform, move data and palette renderer" },
+  },
+  compat = { engine = ">=0.0.0-dev <1.0.0", modApi = 2 },
+}
