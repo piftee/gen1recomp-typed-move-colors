@@ -8,9 +8,51 @@ return function(mod)
   local TypeChart = require("src.battle.TypeChart")
   local WideBattle = require("src.battle.WideBattle")
 
-  -- These are all palettes already present in Red/Blue/Yellow's palette
-  -- registry. No new art or foreign colour system is introduced.
-  local TYPE_PALETTES = {
+  -- Exact flat fills sampled from the supplied type-colour reference. The
+  -- Gen 1 set uses fifteen entries; DARK, FAIRY and STEEL are included so
+  -- content mods that add later types receive the same coherent system.
+  local TYPE_BASE_COLORS = {
+    NORMAL = { 144, 152, 162 },
+    FIGHTING = { 206, 63, 107 },
+    FLYING = { 143, 168, 222 },
+    POISON = { 171, 106, 200 },
+    GROUND = { 217, 119, 70 },
+    ROCK = { 201, 182, 139 },
+    BUG = { 144, 192, 44 },
+    GHOST = { 82, 105, 173 },
+    FIRE = { 254, 156, 85 },
+    WATER = { 77, 144, 214 },
+    GRASS = { 101, 188, 94 },
+    ELECTRIC = { 244, 210, 59 },
+    PSYCHIC_TYPE = { 249, 113, 119 },
+    ICE = { 115, 206, 191 },
+    DRAGON = { 9, 109, 195 },
+    DARK = { 91, 82, 101 },
+    FAIRY = { 236, 144, 231 },
+    STEEL = { 91, 142, 161 },
+  }
+
+  local function typeRamp(base)
+    local light = {}
+    for i = 1, 3 do
+      light[i] = math.floor(base[i] + (255 - base[i]) * 0.30 + 0.5)
+    end
+    return {
+      { 255, 255, 255 }, light,
+      { base[1], base[2], base[3] }, { 0, 0, 0 },
+    }
+  end
+
+  local TYPE_COLORS = {}
+  for id, base in pairs(TYPE_BASE_COLORS) do
+    TYPE_COLORS[id] = typeRamp(base)
+  end
+
+  -- OG RED/BLUE and OG YELLOW are hardware palettes rather than the modern
+  -- type set. Keep their established named-palette mapping when that display
+  -- mode is selected; monochrome, inverted and Classic transformations are
+  -- handled by PaletteFX.effectiveColors below.
+  local OG_TYPE_PALETTES = {
     NORMAL = "GRAYMON",
     FIGHTING = "REDMON",
     FLYING = "CYANMON",
@@ -107,11 +149,17 @@ return function(mod)
 
   local function colorsFor(game, moveType)
     local data = game and game.data
-    local named = TYPE_PALETTES[moveType] or "MEWMON"
-    local colors = PaletteFX.pal(data, named)
-      or PaletteFX.pal(data, "MEWMON") or PaletteFX.GRAYS
+    local colors
+    if PaletteFX.mode == "ogred" then
+      local named = OG_TYPE_PALETTES[moveType] or "GRAYMON"
+      colors = PaletteFX.pal(data, named)
+        or PaletteFX.pal(data, "GRAYMON") or PaletteFX.GRAYS
+    else
+      colors = TYPE_COLORS[moveType] or TYPE_COLORS.NORMAL
+    end
     return PaletteFX.effectiveColors(colors) or colors
   end
+  inputPatch.colorsFor = colorsFor
 
   local rgb
 

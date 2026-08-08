@@ -1,7 +1,7 @@
 # Typed Move Colors
 
 Typed Move Colors turns each move into a chamfered type-coloured button while
-retaining Pokémon Red, Blue and Yellow's original font and named palettes. Its
+retaining Pokémon Red, Blue and Yellow's original font and four-shade rendering. Its
 layered rim, offset shadow and bright selected state mirror Modern Party UI's
 party cards, but the mod also works independently.
 
@@ -57,10 +57,22 @@ on the lighter shade and relies on its selection rail and rim for focus.
 
 ## Type palette mapping
 
-The mod ships no image or ROM assets. Types are mapped to existing named
-palettes such as REDMON, BLUEMON, GREENMON, YELLOWMON, CYANMON, PURPLEMON,
-BROWNMON, PINKMON and GRAYMON. Display modes such as monochrome and inverted
-colours still apply.
+The mod ships no image or ROM assets. Its default bold card faces use this
+reference-derived palette exactly:
+
+| Type | Colour | Type | Colour | Type | Colour |
+| --- | --- | --- | --- | --- | --- |
+| Normal | `#9098A2` | Fighting | `#CE3F6B` | Flying | `#8FA8DE` |
+| Poison | `#AB6AC8` | Ground | `#D97746` | Rock | `#C9B68B` |
+| Bug | `#90C02C` | Ghost | `#5269AD` | Fire | `#FE9C55` |
+| Water | `#4D90D6` | Grass | `#65BC5E` | Electric | `#F4D23B` |
+| Psychic | `#F97177` | Ice | `#73CEBF` | Dragon | `#096DC3` |
+| Dark | `#5B5265` | Fairy | `#EC90E7` | Steel | `#5B8EA1` |
+
+Each colour receives a lighter selected shade plus the game's paper and ink
+endpoints. OG Red/Blue/Yellow, monochrome, inverted and Classic display modes
+still apply. Dark, Fairy and Steel are ready for content mods; unknown custom
+types fall back to Normal.
 
 ## Development
 
