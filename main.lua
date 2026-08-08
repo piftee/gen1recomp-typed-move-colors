@@ -9,6 +9,8 @@ return function(mod)
       default = "wide", choices = {
         { "WIDE", "wide" }, { "GAME", "game" },
       } },
+    { key = "effect_hints", label = "MOVE EFFECT", type = "toggle",
+      default = true },
     { key = "menu_colors", label = "MENU COLORS", type = "toggle",
       default = true },
     { key = "strength", label = "COLOR STRENGTH", type = "choice",
@@ -21,6 +23,7 @@ return function(mod)
   local mainLabels = {
     battle_colors = "MOVE BATTLE",
     layout = "MOVE LAYOUT",
+    effect_hints = "MOVE EFFECT",
     menu_colors = "MOVE MENUS",
     strength = "MOVE TINT",
   }
