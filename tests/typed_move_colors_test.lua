@@ -9,13 +9,25 @@ local MoveLearnMenu = require("src.ui.MoveLearnMenu")
 local PaletteFX = require("src.render.PaletteFX")
 local Runtime = require("src.mods.Runtime")
 local SummaryMenu = require("src.ui.SummaryMenu")
+local TypeChart = require("src.battle.TypeChart")
 
 local data = T.fixtures.fresh()
 data.moves = {
-  FIX_FIRE = { name = "EMBER", type = "FIRE", pp = 25 },
-  FIX_WATER = { name = "WATER GUN", type = "WATER", pp = 25 },
-  FIX_GRASS = { name = "VINE WHIP", type = "GRASS", pp = 10 },
-  FIX_ELECTRIC = { name = "THUNDERBOLT", type = "ELECTRIC", pp = 15 },
+  FIX_FIRE = { name = "EMBER", type = "FIRE", power = 40, pp = 25 },
+  FIX_WATER = { name = "WATER GUN", type = "WATER", power = 40, pp = 25 },
+  FIX_GRASS = { name = "VINE WHIP", type = "GRASS", power = 40, pp = 10 },
+  FIX_ELECTRIC = {
+    name = "THUNDERBOLT", type = "ELECTRIC", power = 95, pp = 15,
+  },
+}
+data.type_chart.matchups[#data.type_chart.matchups + 1] = {
+  attacker = "ELECTRIC", defender = "GROUND", multiplier = 0,
+}
+data.type_chart.matchups[#data.type_chart.matchups + 1] = {
+  attacker = "ELECTRIC", defender = "FLYING", multiplier = 20,
+}
+data.type_chart.matchups[#data.type_chart.matchups + 1] = {
+  attacker = "GRASS", defender = "FLYING", multiplier = 5,
 }
 local function pal(light, dark)
   return {
@@ -32,6 +44,7 @@ data.palettes = {
   },
   pokemon = {},
 }
+TypeChart.load(data)
 Font.load(data)
 local previousMode = PaletteFX.mode
 PaletteFX.setMode("gbc")
@@ -46,7 +59,11 @@ local run = T.sdk.loadMod("mods/typed_move_colors", { data = data, dev = true })
 T.eq(#run.errors, 0, "loads clean (" .. tostring(run.errors[1]) .. ")")
 
 local schema = run.loader.optionSchemas.typed_move_colors or {}
-T.eq(#schema, 4, "all four presentation settings are registered")
+T.eq(#schema, 5, "all five presentation settings are registered")
+T.eq(schema[3].key, "effect_hints",
+  "the mod settings page exposes the effectiveness toggle")
+T.eq(schema[3].label, "MOVE EFFECT",
+  "the mod settings page uses the same Move Effect label")
 
 local current
 local stack = {}
@@ -60,14 +77,18 @@ local game = {
 
 local rows = Runtime.call("ui.options.rows",
   function(_, base) return base end, game, { { id = "text_speed" } })
-T.eq(#rows, 5, "the four settings appear in the main Options menu")
+T.eq(#rows, 6, "the five settings appear in the main Options menu")
 T.eq(rows[2].id, "typed_move_colors_battle_colors",
   "battle colours are the first companion setting")
 T.eq(rows[3].id, "typed_move_colors_layout",
   "the responsive move layout is exposed in the main Options menu")
 T.eq(rows[3].value(game), "WIDE",
   "the two-by-two widescreen battle layout is the mod default")
-T.eq(rows[5].value(game), "BOLD",
+T.eq(rows[4].id, "typed_move_colors_effect_hints",
+  "effectiveness hints are exposed in the main Options menu")
+T.eq(rows[4].value(game), "ON",
+  "effectiveness hints are enabled by default")
+T.eq(rows[6].value(game), "BOLD",
   "the default tint matches Modern Party UI's card contrast")
 
 local layoutProbe = setmetatable({ game = { save = { options = {
@@ -90,12 +111,13 @@ T.eq(run.loader.modOptions.typed_move_colors.battle_colors, false,
 rows[2].step(game, 1) -- restore ON for drawing checks
 
 local graphics = love.graphics
+local realCircle = graphics.circle
 local realRectangle = graphics.rectangle
 local realPolygon = graphics.polygon
 local realSetColor = graphics.setColor
 local realFontDraw = Font.draw
 local realMark = PaletteFX.markTrueColor
-local panels, buttonLayers, marks, text = {}, {}, {}, {}
+local panels, buttonLayers, circles, marks, text = {}, {}, {}, {}, {}
 local activeColor
 graphics.setColor = function(r, g, b, a)
   activeColor = { r, g, b, a }
@@ -112,6 +134,12 @@ graphics.polygon = function(mode, points)
     mode = mode, points = points, color = activeColor,
   }
   if realPolygon then return realPolygon(mode, points) end
+end
+graphics.circle = function(mode, x, y, radius)
+  circles[#circles + 1] = {
+    mode = mode, x = x, y = y, radius = radius,
+  }
+  return realCircle(mode, x, y, radius)
 end
 PaletteFX.markTrueColor = function(x, y, w, h)
   marks[#marks + 1] = { x = x, y = y, w = w, h = h }
@@ -131,9 +159,40 @@ local battle = {
   phase = "moveSelect",
   moveIndex = 2,
   player = { curMoves = moves },
+  enemy = { curTypes = { "GRASS" } },
   wideLayout = function() return false end,
+  drawPicsLayer = function(self, slide, sx, sy, onlySide, skipMenuClip)
+    self.restoredPlayerPic = {
+      slide = slide, sx = sx, sy = sy,
+      onlySide = onlySide, skipMenuClip = skipMenuClip,
+    }
+  end,
 }
 current = battle
+T.eq(inputPatch.effectIndicator(battle, data.moves.FIX_FIRE), "double_up",
+  "a super-effective attack receives two up arrows")
+T.eq(inputPatch.effectIndicator(battle, data.moves.FIX_WATER), "down",
+  "a resisted attack receives one down arrow")
+T.eq(inputPatch.effectIndicator(battle, data.moves.FIX_GRASS), "up",
+  "a neutral HP attack receives one up arrow")
+T.eq(inputPatch.effectIndicator(battle,
+    { type = "NORMAL", power = 0, effect = "SLEEP_EFFECT" }), "circle",
+  "a status move receives a circle")
+T.eq(inputPatch.effectIndicator(battle,
+    { type = "GHOST", power = 0, effect = "SPECIAL_DAMAGE_EFFECT" }), "up",
+  "a fixed-damage move receives an HP-effective up arrow")
+
+battle.enemy.curTypes = { "NORMAL", "FLYING" }
+T.eq(inputPatch.effectIndicator(battle, data.moves.FIX_ELECTRIC), "double_up",
+  "Thunderbolt is super effective against a Normal/Flying Pidgey")
+T.eq(inputPatch.effectIndicator(battle, data.moves.FIX_FIRE), "up",
+  "Flamethrower is neutral against a Normal/Flying Pidgey")
+T.eq(inputPatch.effectIndicator(battle, data.moves.FIX_WATER), "up",
+  "Surf is neutral against a Normal/Flying Pidgey")
+T.eq(inputPatch.effectIndicator(battle, data.moves.FIX_GRASS), "down",
+  "Razor Leaf is resisted by a Normal/Flying Pidgey")
+battle.enemy.curTypes = { "GRASS" }
+
 local detachedOK, detachedErr = pcall(function()
   Runtime.call("battle.overlay", function() end, battle)
 end)
@@ -143,8 +202,20 @@ T.eq(#marks, 0,
   "detached mode leaves the battlefield renderer and palette zones alone")
 T.eq(#panels, 2,
   "only the native TYPE/PP and move-menu regions are cleared")
+T.eq(battle.restoredPlayerPic.onlySide, "player",
+  "standard detached battles restore only the player's sprite")
+T.eq(battle.restoredPlayerPic.skipMenuClip, true,
+  "the restored standard sprite is no longer clipped by the removed menu")
 
-panels, buttonLayers, marks, text = {}, {}, {}, {}
+battle.restoredPlayerPic = nil
+battle.dramaticShapeShot = { canvas = true }
+panels, buttonLayers, circles, marks, text = {}, {}, {}, {}, {}
+Runtime.call("battle.overlay", function() end, battle)
+T.eq(battle.restoredPlayerPic, nil,
+  "a staged voxel battle retains sole ownership of its player Pokemon")
+battle.dramaticShapeShot = nil
+
+panels, buttonLayers, circles, marks, text = {}, {}, {}, {}, {}
 local hudOK, hudErr = pcall(function()
   Runtime.call("render.hud", function() end, game, {
     width = 1024, height = 768,
@@ -154,11 +225,15 @@ local hudOK, hudErr = pcall(function()
 end)
 T.check(hudOK,
   "detached two-by-two move panel draws: " .. tostring(hudErr))
-T.eq(#buttonLayers, 15,
+local cardLayers = {}
+for _, layer in ipairs(buttonLayers) do
+  if #layer.points == 16 then cardLayers[#cardLayers + 1] = layer end
+end
+T.eq(#cardLayers, 15,
   "four move buttons and one PP/type card use the layered card hierarchy")
 T.eq(#marks, 0,
   "the finished-frame panel does not write stale canvas palette marks")
-T.eq(buttonLayers[5].color[1], 0,
+T.eq(cardLayers[5].color[1], 0,
   "the detached selected move also uses the black focus rim")
 local sawPP, sawSelectedPP = false, false
 for _, call in ipairs(text) do
@@ -167,6 +242,45 @@ for _, call in ipairs(text) do
 end
 T.check(sawPP and sawSelectedPP,
   "the side details card shows the selected move's current and maximum PP")
+T.eq(#circles, 0,
+  "ordinary, resisted and super-effective HP attacks use arrows, not circles")
+T.eq(#panels, 2,
+  "effect arrows use head-only polygons without rectangular stems")
+local arrowLayers = {}
+for _, layer in ipairs(buttonLayers) do
+  if #layer.points == 6 then arrowLayers[#arrowLayers + 1] = layer end
+end
+T.eq(#arrowLayers, 5,
+  "the three single arrows and one double arrow are geometric arrowheads")
+T.check(arrowLayers[1].points[1] > 90
+    and arrowLayers[1].points[2] > 20,
+  "effect indicators sit in the bottom-right corner of their move cards")
+
+battle.enemy.curTypes = { "GROUND" }
+T.eq(inputPatch.effectIndicator(battle, data.moves.FIX_ELECTRIC), "circle",
+  "an immune attack receives the same non-HP circle as a status move")
+panels, buttonLayers, circles, marks, text = {}, {}, {}, {}, {}
+Runtime.call("render.hud", function() end, game, {
+  width = 1024, height = 768,
+})
+T.check(#circles > 0,
+  "the immune circle is drawn as geometry instead of font text")
+
+rows[4].step(game, 1)
+T.eq(run.loader.modOptions.typed_move_colors.effect_hints, false,
+  "the main Options toggle disables effect hints")
+T.eq(inputPatch.effectIndicator(battle, data.moves.FIX_ELECTRIC), nil,
+  "the disabled setting suppresses indicator classification")
+panels, buttonLayers, circles, marks, text = {}, {}, {}, {}, {}
+Runtime.call("render.hud", function() end, game, {
+  width = 1024, height = 768,
+})
+T.eq(#circles, 0,
+  "disabled effectiveness hints draw no circle geometry")
+T.eq(#buttonLayers, 15,
+  "disabled effectiveness hints draw no arrow geometry")
+rows[4].step(game, 1) -- restore effect hints
+battle.enemy.curTypes = { "GRASS" }
 
 -- GAME restores the original compact overlay when the engine itself is OG.
 rows[3].step(game, 1)
@@ -260,6 +374,7 @@ T.eq(#marks, 0, "covered menu rows do not restore through a popup")
 
 graphics.rectangle = realRectangle
 graphics.polygon = realPolygon
+graphics.circle = realCircle
 graphics.setColor = realSetColor
 Font.draw = realFontDraw
 PaletteFX.markTrueColor = realMark
@@ -282,8 +397,8 @@ local comboGame = {
 }
 local comboRows = Runtime.call("ui.options.rows",
   function(_, base) return base end, comboGame, { { id = "text_speed" } })
-T.eq(#comboRows, 13,
-  "both companions expose all twelve settings in the main Options menu")
+T.eq(#comboRows, 14,
+  "both companions expose all thirteen settings in the main Options menu")
 T.check(combined.data.screens and combined.data.screens.PartyMenu ~= nil,
   "Modern Party UI retains sole ownership of the party screen")
 combined.release()

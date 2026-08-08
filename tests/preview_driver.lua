@@ -3,7 +3,6 @@ return function(game)
   local U = dofile("tests/drivers/util.lua")
   local BattleState = require("src.battle.BattleState")
   local PaletteFX = require("src.render.PaletteFX")
-  local Pipelines = require("src.render.Pipelines")
   local Pokemon = require("src.pokemon.Pokemon")
   local SummaryMenu = require("src.ui.SummaryMenu")
   local DIR = os.getenv("SHOT_DIR") or "/tmp/typed-move-colors"
@@ -21,6 +20,18 @@ return function(game)
       game.mods.modOptions.typed_move_colors =
         game.mods.modOptions.typed_move_colors or {}
       game.mods.modOptions.typed_move_colors.layout = value
+    end
+  end
+
+  local function effectHints(value)
+    game.save.options.modOptions = game.save.options.modOptions or {}
+    game.save.options.modOptions.typed_move_colors =
+      game.save.options.modOptions.typed_move_colors or {}
+    game.save.options.modOptions.typed_move_colors.effect_hints = value
+    if game.mods and game.mods.modOptions then
+      game.mods.modOptions.typed_move_colors =
+        game.mods.modOptions.typed_move_colors or {}
+      game.mods.modOptions.typed_move_colors.effect_hints = value
     end
   end
 
@@ -43,18 +54,12 @@ return function(game)
   U.shot(game, DIR .. "/typed_move_summary.png")
 
   while game.stack:top() do game.stack:pop() end
-  -- Match an early-game two-move party member for the custom-renderer
-  -- capture: its two buttons should expand to fill the lower control area.
-  mon.moves = { allMoves[1], allMoves[2] }
-  -- A staged battle renderer owns its transparent classic surface. Simulate
-  -- that ownership while WIDE remains the mod default; this capture must
-  -- stay classic rather than widening the whole battlefield underneath it.
+  -- Keep all four moves in the standard-renderer capture so the complete
+  -- player sprite and the geometric indicators can be judged together.
+  -- WIDE remains the mod default but changes only the detached selector; the
+  -- game's classic battlefield itself must stay intact.
   moveLayout(nil)
   game.save.options.battleLayout = "og"
-  local realWorldPipeline = Pipelines.worldPipeline
-  Pipelines.worldPipeline = function()
-    return "preview_world_renderer", { drawWorld = function() end }
-  end
   local battle = BattleState.newWild(game, "PIDGEY", 20,
     { onFinish = function() end })
   game.stack:push(battle)
@@ -68,10 +73,15 @@ return function(game)
   battle.phase = "moveSelect"
   battle.moveIndex = 2
   U.wait(8)
-  U.log("PASS custom renderer keeps its classic battle surface")
-  U.shot(game, DIR .. "/typed_move_battle_classic.png")
+  U.log("PASS standard renderer restores the complete player sprite")
+  U.shot(game, DIR .. "/typed_move_battle_standard.png")
 
-  Pipelines.worldPipeline = realWorldPipeline
+  effectHints(false)
+  U.wait(3)
+  U.log("PASS Move Effect off removes every indicator")
+  U.shot(game, DIR .. "/typed_move_battle_effect_off.png")
+  effectHints(true)
+
   -- Also verify compatibility when the user explicitly enables the engine's
   -- complete wide battle renderer: the mod decorates it without replacing it.
   moveLayout(nil)

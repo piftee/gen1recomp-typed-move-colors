@@ -37,6 +37,7 @@ mod's own options page:
 | --- | --- |
 | Move Battle | On or off |
 | Move Layout | Wide or game |
+| Move Effect | On or off |
 | Move Menus | On or off |
 | Move Tint | Bold or soft |
 
@@ -91,6 +92,16 @@ Over an `OG` or custom-rendered battle, it removes only the old move-menu pixels
 from the transparent UI layer and draws its grid after the final battlefield
 composition. Directional input is mapped to the same two-by-two arrangement;
 native PP validation and move execution remain unchanged.
+
+When **Move Effect** is on, each responsive battle button gets a small geometric
+indicator in its bottom-right corner: `↑↑` for super-effective, `↑` for
+effective, `↓` for not very effective, and `○` for status moves or attacks that
+will not affect HP. The arrows are compact head-only pixel shapes rather than
+extra font text. The indicator
+reads the opponent's current battle types and the live merged type chart, so
+Conversion and type-altering mods are respected. Fixed-damage moves and Super
+Fang use `↑` because Generation 1 applies their HP damage without scaling it
+through the type chart.
 
 ## Distribution
 

@@ -113,6 +113,68 @@ return function(mod)
     return PaletteFX.effectiveColors(colors) or colors
   end
 
+  local rgb
+
+  -- Effect indicators use the same merged chart as damage calculation and
+  -- the opponent's live battle types, so Conversion and type/content mods are
+  -- reflected immediately. Fixed-damage and Super Fang effects deliberately
+  -- skip the chart in Gen 1; because they still change HP, they receive the
+  -- ordinary single-up indicator. OHKO moves consult only immunity.
+  local DIRECT_HP_DAMAGE = {
+    SPECIAL_DAMAGE_EFFECT = true,
+    SUPER_FANG_EFFECT = true,
+  }
+
+  local function effectIndicator(battle, def)
+    if not setting("effect_hints", true) or not battle or not def then
+      return nil
+    end
+    local target = battle.enemy
+    if type(target and target.curTypes) ~= "table" then return nil end
+    if DIRECT_HP_DAMAGE[def.effect] then return "up" end
+    if type(def.power) ~= "number" or def.power <= 0 then return "circle" end
+    local ok, mult = pcall(TypeChart.effectiveness,
+      def.type, target.curTypes)
+    if not ok or type(mult) ~= "number" then return "circle" end
+    if mult == 0 then return "circle" end
+    if def.effect == "OHKO_EFFECT" then return "up" end
+    if mult > 10 then return "double_up" end
+    if mult < 10 then return "down" end
+    return "up"
+  end
+  inputPatch.effectIndicator = effectIndicator
+
+  local function drawEffectArrow(cx, cy, direction, color)
+    love.graphics.setColor(rgb(color))
+    if direction == "up" then
+      love.graphics.polygon("fill", {
+        cx, cy - 4, cx - 4, cy + 3, cx + 4, cy + 3,
+      })
+    else
+      love.graphics.polygon("fill", {
+        cx, cy + 4, cx - 4, cy - 3, cx + 4, cy - 3,
+      })
+    end
+  end
+
+  local function drawEffectIndicator(kind, x, y, w, h, color)
+    if not kind then return end
+    local cx = x + w - 10
+    local cy = y + h - 9
+    if kind == "circle" then
+      love.graphics.push("all")
+      love.graphics.setColor(rgb(color))
+      if love.graphics.setLineWidth then love.graphics.setLineWidth(1) end
+      love.graphics.circle("line", cx, cy, 3)
+      love.graphics.pop()
+    elseif kind == "double_up" then
+      drawEffectArrow(cx - 4, cy, "up", color)
+      drawEffectArrow(cx + 4, cy, "up", color)
+    else
+      drawEffectArrow(cx, cy, kind, color)
+    end
+  end
+
   local inkShader
   local function shaderForInk()
     if inkShader == nil then
@@ -146,7 +208,7 @@ return function(mod)
     return text
   end
 
-  local function rgb(color)
+  rgb = function(color)
     return color[1] / 255, color[2] / 255, color[3] / 255
   end
 
@@ -199,6 +261,32 @@ return function(mod)
     g.setColor(0, 0, 0, 0)
     g.rectangle("fill", x, y, w, h)
     g.pop()
+  end
+
+  -- Classic move selection clips the player pic at y=64 because the Game
+  -- Boy TYPE/PP box replaced those tile rows. The detached selector removes
+  -- that box, so a flat battle needs its complete player pic drawn once more
+  -- after cleanup. Staged renderers deliberately own the Pokemon themselves:
+  -- Voxel Battle Art exposes its live shot on the battle and makes the battle
+  -- surface transparent, either of which keeps this compatibility redraw out
+  -- of its composition.
+  local function restoreDetachedPlayerPic(battle)
+    if not (battle and battle.drawPicsLayer) then return end
+    if rawget(battle, "dramaticShapeShot") ~= nil
+        or battle.letterboxWhite == false then
+      return
+    end
+    local fx = battle.fx
+    local sx = fx and fx.shakeX or 0
+    local sy = fx and fx.shakeY or 0
+    if sx == 0 and sy == 0 and fx and fx.shake and fx.shake > 0 then
+      sx = (battle.frame or 0) % 4 < 2 and 2 or -2
+    end
+    -- Gen1Recomp advances the intro at four pixels per draw. Move selection
+    -- normally has no remaining slide, but mirroring it keeps this redraw
+    -- correct for custom transitions into the menu.
+    local slide = (battle.introSlide or 0) * 4
+    battle:drawPicsLayer(slide, sx, sy, "player", true)
   end
 
   -- Mirrors Modern Party UI's card hierarchy at the scale available here:
@@ -272,6 +360,7 @@ return function(mod)
       if phase == "moveSelect" then
         eraseRegion(0, 64, 88, 40)
         eraseRegion(0, 96, 160, 48)
+        restoreDetachedPlayerPic(battle)
       else
         eraseRegion(0, 56, 128, 48)
       end
@@ -395,12 +484,15 @@ return function(mod)
         local row = math.floor((i - 1) / 2)
         local x, y = col == 0 and 2 or 110, 2 + row * rowStep
         local w, h = col == 0 and 105 or 108, buttonH
+        local indicator = phase == "moveSelect"
+          and effectIndicator(battle, def)
         drawButton(game, def.type, x, y, w, h, i == selected, false,
           function(foreground)
             local textX = x + 4
             local textY = y + math.floor((h - 8) / 2)
             drawInk(def.name or move.id, textX, textY,
               w - 9, foreground)
+            drawEffectIndicator(indicator, x, y, w, h, foreground)
           end, true)
       end
     end

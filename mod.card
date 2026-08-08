@@ -11,8 +11,9 @@ return {
     added = {
       "Chamfered type-coloured move buttons built from the game's named palettes",
       "A responsive move-only two-by-two grid with PP/type details and a Game-controlled fallback",
+      "Optional arrow and circle effectiveness indicators on responsive battle move buttons",
       "A dominant black selected frame with a raised focus state",
-      "Battle, layout, menu and tint-strength settings in the main Options screen",
+      "Battle, layout, effectiveness, menu and tint-strength settings in the main Options screen",
       "Three-letter type labels on the summary move page",
     },
     known = {

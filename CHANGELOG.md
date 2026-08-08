@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 - 2026-08-08
+
+- Added optional geometric effectiveness indicators to responsive battle move buttons.
+- Uses double-up, up, down and circle symbols for super-effective, effective, resisted and non-HP moves respectively.
+- Keeps the symbols secondary with stemless arrowheads anchored to each card's bottom-right corner.
+- Added the Move Effect toggle to the normal game Options menu and the mod settings page.
+- Treats fixed-damage and Super Fang moves as HP-effective without claiming a chart multiplier Generation 1 does not apply.
+- Restored the complete player Pokemon sprite after removing the classic TYPE/PP box in standard battles, while leaving staged voxel renderers untouched.
+
 ## 0.2.5 - 2026-08-08
 
 - Scaled the complete detached selector uniformly to nearly the full screen width.
