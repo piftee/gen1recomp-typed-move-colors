@@ -10,7 +10,8 @@ return {
     },
     added = {
       "Chamfered move buttons using an exact reference-derived type palette",
-      "A responsive move-only two-by-two grid with PP/type details and a Game-controlled fallback",
+      "A width-and-height-responsive two-by-two grid with PP/type details and a Game-controlled fallback",
+      "Useful Move Info compatibility for battle text and move-learning rows",
       "Optional arrow and circle effectiveness indicators on responsive battle move buttons",
       "A dominant black selected frame with a raised focus state",
       "Battle, layout, effectiveness, menu and tint-strength settings in the main Options screen",

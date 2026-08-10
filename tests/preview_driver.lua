@@ -7,6 +7,14 @@ return function(game)
   local SummaryMenu = require("src.ui.SummaryMenu")
   local DIR = os.getenv("SHOT_DIR") or "/tmp/typed-move-colors"
 
+  if os.getenv("PREVIEW_ANDROID") == "1" then
+    love.window.setMode(1600, 845, { resizable = true,
+      minwidth = 640, minheight = 360 })
+  elseif os.getenv("PREVIEW_PORTRAIT") == "1" then
+    love.window.setMode(460, 1024, { resizable = true,
+      minwidth = 320, minheight = 576 })
+  end
+
   game.save.options = game.save.options or {}
   game.save.options.colors = "redpp"
   PaletteFX.setMode("redpp")

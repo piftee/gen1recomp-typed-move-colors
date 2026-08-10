@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.3 - 2026-08-10
+
+- Kept Useful Move Info's Start/Q battle text box above the detached move selector.
+- Added type-coloured current-move and NEW MOVE rows to Useful Move Info's move-learning screen without replacing its inspection controls.
+- Added Useful Move Info as an optional dependency so its screen factory is available before the compatibility adapter is installed.
+
+## 0.3.2 - 2026-08-09
+
+- Made the detached move selector choose its integer scale from both display width and height.
+- Capped the selector to roughly the bottom third of short landscape screens instead of allowing width to make it excessively tall.
+- Expanded the native card widths after a height cap so wide displays still use their available horizontal space without stretching the pixel art.
+- Kept the complete selector inside Android and iOS safe areas where the platform reports them.
+- Restored the narrow player HUD strip shared with the erased native TYPE/PP panel, fixing clipped HP and companion EXP labels in standard battles.
+- Anchored tall mobile selectors to the native move-menu row beneath the player HUD instead of dropping them into the touch-control area.
+
 ## 0.3.1 - 2026-08-08
 
 - Replaced the approximate named-palette type colours with exact fills sampled from the supplied type reference.

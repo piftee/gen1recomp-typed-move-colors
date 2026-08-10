@@ -102,6 +102,49 @@ T.eq(inputPatch.navigate(1, 4, "right"), 2,
 T.eq(inputPatch.navigate(2, 4, "down"), 4,
   "the detached panel maps DOWN into its second row")
 
+local androidLayout = inputPatch.detachedLayout(1600, 845)
+T.eq(androidLayout.scale, 3,
+  "a wide, short Android display is height-capped at a crisp 3x scale")
+T.eq(androidLayout.panelH * androidLayout.scale, 240,
+  "the Android panel no longer grows to the old 400-pixel height")
+T.eq(androidLayout.panelW * androidLayout.scale, 1584,
+  "height-capped cards expand to retain nearly the complete screen width")
+T.eq(androidLayout.originY, 597,
+  "the compact Android selector remains docked to the bottom band")
+T.eq(androidLayout.leftW + 3 + androidLayout.rightW, 392,
+  "the responsive move grid divides all available native width")
+
+local insetLayout = inputPatch.detachedLayout(
+  1600, 845, 24, 10, 1552, 805)
+T.check(insetLayout.originX >= 24
+    and insetLayout.originX + insetLayout.panelW * insetLayout.scale <= 1576,
+  "the responsive selector stays inside horizontal device safe areas")
+T.check(insetLayout.originY >= 10
+    and insetLayout.originY + insetLayout.panelH * insetLayout.scale <= 815,
+  "the responsive selector stays above the Android navigation safe area")
+
+local portraitLayout = inputPatch.detachedLayout(360, 800)
+T.eq(portraitLayout.scale, 1,
+  "a narrow portrait display lets width remain the limiting dimension")
+T.check(portraitLayout.panelW <= 344,
+  "the narrow layout fits its card geometry inside the available width")
+
+local anchoredPortrait = inputPatch.detachedLayout(
+  920, 2048, 0, 0, 920, 2048, 1184)
+T.eq(anchoredPortrait.originY, 1184,
+  "a tall mobile selector follows the native move row below the player HUD")
+T.check(anchoredPortrait.originY + anchoredPortrait.panelH
+    * anchoredPortrait.scale < 1500,
+  "the portrait selector no longer drops into the touch-control area")
+local anchoredLandscape = inputPatch.detachedLayout(
+  1600, 845, 0, 0, 1600, 845, 582)
+T.eq(anchoredLandscape.originY, 582,
+  "landscape keeps the selector close to the native battle controls")
+local lowerNativeRow = inputPatch.detachedLayout(
+  1600, 845, 0, 0, 1600, 845, 700)
+T.eq(lowerNativeRow.originY, androidLayout.originY,
+  "the safe-area bottom remains the fallback when it is already closer")
+
 local referenceColors = {
   NORMAL = { 144, 152, 162 }, FIGHTING = { 206, 63, 107 },
   FLYING = { 143, 168, 222 }, POISON = { 171, 106, 200 },
@@ -148,9 +191,11 @@ local realCircle = graphics.circle
 local realRectangle = graphics.rectangle
 local realPolygon = graphics.polygon
 local realSetColor = graphics.setColor
+local realTranslate = graphics.translate
 local realFontDraw = Font.draw
 local realMark = PaletteFX.markTrueColor
 local panels, buttonLayers, circles, marks, text = {}, {}, {}, {}, {}
+local translations = {}
 local activeColor
 graphics.setColor = function(r, g, b, a)
   activeColor = { r, g, b, a }
@@ -173,6 +218,10 @@ graphics.circle = function(mode, x, y, radius)
     mode = mode, x = x, y = y, radius = radius,
   }
   return realCircle(mode, x, y, radius)
+end
+graphics.translate = function(x, y)
+  translations[#translations + 1] = { x = x, y = y }
+  return realTranslate(x, y)
 end
 PaletteFX.markTrueColor = function(x, y, w, h)
   marks[#marks + 1] = { x = x, y = y, w = w, h = h }
@@ -199,6 +248,9 @@ local battle = {
       slide = slide, sx = sx, sy = sy,
       onlySide = onlySide, skipMenuClip = skipMenuClip,
     }
+  end,
+  drawHUDs = function(self, slide)
+    self.restoredPlayerHud = { slide = slide }
   end,
 }
 current = battle
@@ -239,13 +291,18 @@ T.eq(battle.restoredPlayerPic.onlySide, "player",
   "standard detached battles restore only the player's sprite")
 T.eq(battle.restoredPlayerPic.skipMenuClip, true,
   "the restored standard sprite is no longer clipped by the removed menu")
+T.eq(battle.restoredPlayerHud.slide, 0,
+  "the erased edge of the live player HP/EXP HUD is restored")
 
 battle.restoredPlayerPic = nil
+battle.restoredPlayerHud = nil
 battle.dramaticShapeShot = { canvas = true }
 panels, buttonLayers, circles, marks, text = {}, {}, {}, {}, {}
 Runtime.call("battle.overlay", function() end, battle)
 T.eq(battle.restoredPlayerPic, nil,
   "a staged voxel battle retains sole ownership of its player Pokemon")
+T.eq(battle.restoredPlayerHud, nil,
+  "a staged voxel battle retains sole ownership of its player HUD")
 battle.dramaticShapeShot = nil
 
 panels, buttonLayers, circles, marks, text = {}, {}, {}, {}, {}
@@ -292,6 +349,28 @@ T.eq(#arrowLayers, 5,
 T.check(arrowLayers[1].points[1] > 90
     and arrowLayers[1].points[2] > 20,
   "effect indicators sit in the bottom-right corner of their move cards")
+
+buttonLayers = {}
+current = { usefulMoveInfoTextBox = true }
+Runtime.call("render.hud", function() end, game, {
+  width = 1024, height = 768,
+})
+T.eq(#buttonLayers, 0,
+  "a modal above the battle suppresses the detached selector")
+current = battle
+
+translations = {}
+local portraitHudOK, portraitHudErr = pcall(function()
+  Runtime.call("render.hud", function() end, game, {
+    width = 920, height = 2048,
+    gameX = 60, gameY = 664, gameWidth = 800, gameHeight = 720,
+    scale = 5,
+  })
+end)
+T.check(portraitHudOK,
+  "portrait detached panel draws: " .. tostring(portraitHudErr))
+T.eq(translations[1] and translations[1].y, 1184,
+  "the rendered portrait panel starts at the native move-menu row")
 
 battle.enemy.curTypes = { "GROUND" }
 T.eq(inputPatch.effectIndicator(battle, data.moves.FIX_ELECTRIC), "circle",
@@ -413,6 +492,7 @@ graphics.rectangle = realRectangle
 graphics.polygon = realPolygon
 graphics.circle = realCircle
 graphics.setColor = realSetColor
+graphics.translate = realTranslate
 Font.draw = realFontDraw
 PaletteFX.markTrueColor = realMark
 PaletteFX.setMode(previousMode)
@@ -439,5 +519,88 @@ T.eq(#comboRows, 14,
 T.check(combined.data.screens and combined.data.screens.PartyMenu ~= nil,
   "Modern Party UI retains sole ownership of the party screen")
 combined.release()
+
+-- Useful Move Info registers its own MoveLearnMenu factory, then installs an
+-- instance-level draw method for its inspectable NEW MOVE row. Typed Move
+-- Colors must compose with that owner and must not paint over its battle
+-- TextBox after the finished-frame HUD pass.
+local usefulData = T.fixtures.fresh()
+usefulData.moves = {
+  FIX_FIRE = { name = "EMBER", type = "FIRE", power = 40, pp = 25 },
+  FIX_WATER = { name = "WATER GUN", type = "WATER", power = 40, pp = 25 },
+  FIX_GRASS = { name = "VINE WHIP", type = "GRASS", power = 35, pp = 10 },
+  FIX_ELECTRIC = {
+    name = "THUNDERBOLT", type = "ELECTRIC", power = 95, pp = 15,
+  },
+  FIX_NEW = { name = "BITE", type = "DARK", power = 60, pp = 25 },
+}
+Font.load(usefulData)
+local usefulCombined = T.sdk.loadMods({
+  "mods/typed_move_colors/tests/fixtures/useful_move_info",
+  "mods/typed_move_colors",
+}, { data = usefulData, dev = true })
+T.eq(#usefulCombined.errors, 0,
+  "loads beside Useful Move Info without registry conflicts")
+T.eq(usefulCombined.loader.order[1], "useful_move_info",
+  "the optional companion loads before its Typed Move Colors adapter")
+
+local usefulTop
+local usefulStack = {}
+function usefulStack:top() return usefulTop end
+local usefulGame = {
+  data = usefulCombined.data,
+  save = { options = {} },
+  mods = usefulCombined.loader,
+  stack = usefulStack,
+}
+local usefulMon = { moves = {
+  { id = "FIX_FIRE", pp = 20 },
+  { id = "FIX_WATER", pp = 18 },
+  { id = "FIX_GRASS", pp = 7 },
+  { id = "FIX_ELECTRIC", pp = 12 },
+} }
+local usefulRecord = usefulCombined.data.screens.MoveLearnMenu
+local usefulLearn = usefulRecord.new(
+  usefulGame, usefulMon, "FIX_NEW", function() end)
+usefulLearn.selecting = true
+usefulLearn.index = 5
+usefulTop = usefulLearn
+
+local usefulMarks, usefulLabels = {}, {}
+local usefulRealMark = PaletteFX.markTrueColor
+local usefulRealDraw = Font.draw
+PaletteFX.markTrueColor = function(x, y, w, h)
+  usefulMarks[#usefulMarks + 1] = { x = x, y = y, w = w, h = h }
+end
+Font.draw = function(value, x, y)
+  usefulLabels[#usefulLabels + 1] = value
+  return usefulRealDraw(value, x, y)
+end
+local usefulDrawOK, usefulDrawErr = pcall(usefulLearn.draw, usefulLearn)
+PaletteFX.markTrueColor = usefulRealMark
+Font.draw = usefulRealDraw
+T.check(usefulDrawOK,
+  "Useful Move Info move-learning colours draw: " .. tostring(usefulDrawErr))
+T.check(usefulLearn.usefulMoveInfoDrawn,
+  "Useful Move Info retains ownership of its instance-level presentation")
+T.eq(#usefulMarks, 5,
+  "all four current moves and the inspectable NEW MOVE row are coloured")
+local sawNewMove = false
+for _, label in ipairs(usefulLabels) do
+  if label == "BITE NEW" then sawNewMove = true break end
+end
+T.check(sawNewMove,
+  "the coloured added row keeps Useful Move Info's NEW label")
+
+usefulMarks = {}
+usefulTop = { usefulMoveInfoTextBox = true }
+PaletteFX.markTrueColor = function(x, y, w, h)
+  usefulMarks[#usefulMarks + 1] = { x = x, y = y, w = w, h = h }
+end
+usefulLearn:draw()
+PaletteFX.markTrueColor = usefulRealMark
+T.eq(#usefulMarks, 0,
+  "Useful Move Info's modal remains above the move-learning colours")
+usefulCombined.release()
 
 T.finish("typed_move_colors")

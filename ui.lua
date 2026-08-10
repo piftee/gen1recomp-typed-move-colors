@@ -4,6 +4,7 @@ return function(mod)
   local ListMenu = require("src.ui.ListMenu")
   local MoveLearnMenu = require("src.ui.MoveLearnMenu")
   local PaletteFX = require("src.render.PaletteFX")
+  local SafeArea = require("src.core.SafeArea")
   local SummaryMenu = require("src.ui.SummaryMenu")
   local TypeChart = require("src.battle.TypeChart")
   local WideBattle = require("src.battle.WideBattle")
@@ -337,6 +338,29 @@ return function(mod)
     battle:drawPicsLayer(slide, sx, sy, "player", true)
   end
 
+  -- The native TYPE/PP box is 11 tiles wide. Its final tile overlaps the
+  -- left edge of the player HUD, so erasing the complete box also removes
+  -- the first half of the HP label (and Battle Info HUD's wider EXP label).
+  -- Re-run the live HUD renderer through a narrow scissor after cleanup.
+  -- Calling the live method is intentional: companion HUD mods that wrap
+  -- drawHUDs get to restore their own pixels instead of this mod attempting
+  -- to recreate or overwrite their presentation.
+  local function restoreDetachedPlayerHud(battle)
+    if not (battle and type(battle.drawHUDs) == "function") then return end
+    if rawget(battle, "dramaticShapeShot") ~= nil
+        or battle.letterboxWhite == false then
+      return
+    end
+    local g = love.graphics
+    g.push("all")
+    g.setScissor(56, 48, 32, 48)
+    local ok, err = pcall(battle.drawHUDs, battle, 0)
+    g.pop()
+    if not ok then
+      mod.log:warn("could not restore detached player HUD: %s", tostring(err))
+    end
+  end
+
   -- Mirrors Modern Party UI's card hierarchy at the scale available here:
   -- offset black shadow, pale outer rim, type-coloured face and a bright
   -- selection rail. Dense buttons retain the same hierarchy with one-pixel
@@ -408,6 +432,7 @@ return function(mod)
       if phase == "moveSelect" then
         eraseRegion(0, 64, 88, 40)
         eraseRegion(0, 96, 160, 48)
+        restoreDetachedPlayerHud(battle)
         restoreDetachedPlayerPic(battle)
       else
         eraseRegion(0, 56, 128, 48)
@@ -471,30 +496,77 @@ return function(mod)
 
   local function activeBattle(game)
     local stack = game and game.stack
-    local states = stack and stack.states
-    if type(states) == "table" then
-      for i = #states, 1, -1 do
-        local state = states[i]
-        if state and state.game == game
-            and (state.phase == "moveSelect"
-              or state.phase == "mimicSelect") then
-          return state
-        end
-      end
-    end
     local top = stack and stack.top and stack:top() or nil
     if top and (top.phase == "moveSelect" or top.phase == "mimicSelect") then
       return top
     end
   end
 
+  -- Builds the detached selector in screen-space units. Width chooses the
+  -- preferred integer scale, but height caps the panel at roughly the bottom
+  -- third of the usable display. When a wide, short phone hits that cap, the
+  -- native card widths expand instead of stretching pixels or wasting the
+  -- remaining horizontal room.
+  local function detachedLayout(screenW, screenH,
+      safeX, safeY, safeW, safeH, nativeMoveY)
+    screenW = math.max(1, math.floor(tonumber(screenW) or 304))
+    screenH = math.max(1, math.floor(tonumber(screenH) or 144))
+    safeX = math.max(0, math.floor(tonumber(safeX) or 0))
+    safeY = math.max(0, math.floor(tonumber(safeY) or 0))
+    safeW = math.max(1, math.floor(tonumber(safeW) or screenW))
+    safeH = math.max(1, math.floor(tonumber(safeH) or screenH))
+
+    local panelH = 80
+    local widthScale = math.floor((safeW - 16) / 304)
+    local heightScale = math.floor((safeH * 0.34) / panelH)
+    local scale = math.max(1, math.min(6, widthScale, heightScale))
+    local margin = math.max(8, scale * 2)
+    local panelW = math.max(240,
+      math.floor((safeW - margin * 2) / scale))
+
+    local detailW = math.max(72,
+      math.min(128, math.floor(panelW * 0.26)))
+    local detailX = panelW - detailW - 2
+    local gridX = 2
+    local gridRight = detailX - 4
+    local gridW = math.max(150, gridRight - gridX)
+    local columnGap = 3
+    local leftW = math.floor((gridW - columnGap) / 2)
+    local rightX = gridX + leftW + columnGap
+    local rightW = gridRight - rightX
+
+    local bottomY = safeY + safeH - panelH * scale - margin
+    local originY = bottomY
+    if tonumber(nativeMoveY) then
+      -- The classic battle's move box starts at row 13 (y=104), eight
+      -- logical pixels below the player HUD. On tall phones, docking only to
+      -- the safe-area bottom can put the controls hundreds of pixels away
+      -- from the battle information. Treat that native row as a maximum
+      -- distance: bottom docking still wins when it is already closer, while
+      -- portrait layouts rise back underneath the player HUD.
+      originY = math.min(bottomY, math.floor(nativeMoveY))
+      originY = math.max(safeY, originY)
+    end
+
+    return {
+      scale = scale, margin = margin,
+      panelW = panelW, panelH = panelH,
+      originX = safeX + math.floor((safeW - panelW * scale) / 2),
+      originY = originY,
+      gridX = gridX, leftW = leftW,
+      rightX = rightX, rightW = rightW,
+      detailX = detailX, detailW = detailW,
+    }
+  end
+  inputPatch.detachedLayout = detachedLayout
+
   -- Responsive move-only panel drawn after the completed world/UI composite.
   -- It never changes Renderer.uiSize or BattleState's drawing path, so staged
-  -- 3D battles keep every pixel of their background. The coordinates below
-  -- are a 304x80 native-pixel control area scaled by an integer to nearly the
-  -- full window width. It stays in the bottom band beneath the battling
-  -- Pokémon, including in staged voxel renderers. Only the five chamfered
-  -- cards cover the world.
+  -- 3D battles keep every pixel of their background. Its 80px-tall native
+  -- control area scales by a height-safe integer and then expands its card
+  -- widths to fill the usable display. It follows the normal move-menu row
+  -- beneath the player HUD, but may dock lower when the device bottom is
+  -- already closer. Only the five chamfered cards cover the world.
   local function renderDetachedBattle(game, viewport)
     if not setting("battle_colors", true) then return end
     local battle = activeBattle(game)
@@ -510,16 +582,24 @@ return function(mod)
       or love.graphics.getWidth and love.graphics.getWidth() or 304
     local screenH = viewport and viewport.height
       or love.graphics.getHeight and love.graphics.getHeight() or 144
-    local panelW, panelH = 304, 80
-    local scale = math.floor((screenW - 16) / panelW)
-    scale = math.max(1, math.min(6, scale))
-    local margin = math.max(8, scale * 2)
-    local originX = math.floor((screenW - panelW * scale) / 2)
-    local originY = math.floor(screenH - panelH * scale - margin)
+    local safeX, safeY, safeW, safeH = 0, 0, screenW, screenH
+    local actualW, actualH = love.graphics.getDimensions()
+    -- Synthetic/headless viewports deliberately differ from the graphics
+    -- stub. In the real renderer they match, so only then consult the device
+    -- safe area for Android navigation bars, cutouts and iOS home indicators.
+    if math.abs(actualW - screenW) < 1 and math.abs(actualH - screenH) < 1 then
+      safeX, safeY, safeW, safeH = SafeArea.rect()
+    end
+    local nativeMoveY
+    if viewport and tonumber(viewport.gameY) and tonumber(viewport.scale) then
+      nativeMoveY = viewport.gameY + 104 * viewport.scale
+    end
+    local layout = detachedLayout(screenW, screenH,
+      safeX, safeY, safeW, safeH, nativeMoveY)
 
     love.graphics.push("all")
-    love.graphics.translate(originX, originY)
-    love.graphics.scale(scale, scale)
+    love.graphics.translate(layout.originX, layout.originY)
+    love.graphics.scale(layout.scale, layout.scale)
 
     local twoRows = #moves > 2
     local buttonH = twoRows and 36 or 74
@@ -530,8 +610,9 @@ return function(mod)
       if def then
         local col = (i - 1) % 2
         local row = math.floor((i - 1) / 2)
-        local x, y = col == 0 and 2 or 110, 2 + row * rowStep
-        local w, h = col == 0 and 105 or 108, buttonH
+        local x, y = col == 0 and layout.gridX or layout.rightX,
+          2 + row * rowStep
+        local w, h = col == 0 and layout.leftW or layout.rightW, buttonH
         local indicator = phase == "moveSelect"
           and effectIndicator(battle, def)
         drawButton(game, def.type, x, y, w, h, i == selected, false,
@@ -551,19 +632,22 @@ return function(mod)
       -- The details card shares the focused type and black selected rim, so
       -- PP is visually attached to the selected move without touching the
       -- staged renderer's own HUDs.
-      drawButton(game, def.type, 222, 2, 80, 74, true, false,
+      local detailX, detailW = layout.detailX, layout.detailW
+      local textX = detailX + 6
+      drawButton(game, def.type, detailX, 2, detailW, 74, true, false,
         function(foreground)
           if phase == "moveSelect" then
             local maxPP = (def.pp or 0)
               + (selectedMove.ppUps or 0) * math.floor((def.pp or 0) / 5)
-            drawInk("PP", 228, 21, 16, foreground)
+            drawInk("PP", textX, 21, 16, foreground)
             drawInk(("%2d/%2d"):format(selectedMove.pp or 0, maxPP),
-              251, 21, 44, foreground)
+              textX + 23, 21, detailW - 33, foreground)
           else
-            drawInk("COPY", 228, 21, 48, foreground)
+            drawInk("COPY", textX, 21, detailW - 12, foreground)
           end
           local shown = TypeChart.displayName(def.type) or def.type or "???"
-          drawInk(tostring(shown):upper(), 228, 51, 66, foreground)
+          drawInk(tostring(shown):upper(), textX, 51,
+            detailW - 12, foreground)
         end, true)
     end
 
@@ -606,13 +690,33 @@ return function(mod)
   local function renderMoveLearn(screen)
     if not setting("menu_colors", true) or not screen.selecting
         or not isTop(screen) then return end
+    local rowBase = screen._typedMoveColorsUsefulInfo and 4 or 5
     for i, move in ipairs(screen.mon and screen.mon.moves or {}) do
       local def = moveDef(screen.game, move)
       if def then
-        local y = (5 + i) * 8
+        local y = (rowBase + i) * 8
         drawButton(screen.game, def.type, 46, y, 106, 8,
           i == screen.index, true, function(foreground)
             drawInk(def.name or move.id, 48, y, 102, foreground)
+          end)
+      end
+    end
+    -- Useful Move Info adds an inspect-only NEW MOVE row before CANCEL and
+    -- shifts the list up one tile. Its instance-level draw method bypasses
+    -- MoveLearnMenu.draw, so the adapter below marks that layout and this
+    -- renderer gives the added row the same live type treatment.
+    if screen._typedMoveColorsUsefulInfo and screen.newMoveId then
+      local index = #(screen.mon and screen.mon.moves or {}) + 1
+      local def = moveDef(screen.game, screen.newMoveId)
+      if def then
+        local y = (rowBase + index) * 8
+        local label = def.name or screen.newMoveId
+        if Font.width(label) + Font.width(" NEW") <= 100 then
+          label = label .. " NEW"
+        end
+        drawButton(screen.game, def.type, 46, y, 106, 8,
+          screen.index == index, true, function(foreground)
+            drawInk(label, 48, y, 102, foreground)
           end)
       end
     end
@@ -641,6 +745,40 @@ return function(mod)
 
   safeDrawPatch(SummaryMenu, "_typedMoveColorsPatch", renderSummary)
   safeDrawPatch(MoveLearnMenu, "_typedMoveColorsPatch", renderMoveLearn)
+
+  -- Useful Move Info owns MoveLearnMenu through the screen registry and
+  -- installs its draw method on each instance. Compose with that factory
+  -- after it has built the enhanced controller, leaving its input, NEW row,
+  -- HM protection and info boxes untouched while restoring this mod's final
+  -- presentation pass.
+  if mod.find("useful_move_info") then
+    local record = mod.content.screens:get("MoveLearnMenu")
+    if type(record) == "table" and type(record.new) == "function" then
+      mod.content.screens:override("MoveLearnMenu", {
+        new = function(...)
+          local screen = record.new(...)
+          if type(screen) ~= "table" then return screen end
+          screen._typedMoveColorsUsefulInfo = true
+          local usefulDraw = screen.draw
+          if type(usefulDraw) == "function" then
+            screen.draw = function(self, ...)
+              local result = usefulDraw(self, ...)
+              local ok, err = pcall(renderMoveLearn, self)
+              if not ok and not self._typedMoveColorsWarned then
+                self._typedMoveColorsWarned = true
+                mod.log:warn("Useful Move Info colours skipped: %s",
+                  tostring(err))
+              end
+              return result
+            end
+          end
+          return screen
+        end,
+      })
+    else
+      mod.log:warn("Useful Move Info MoveLearnMenu adapter was unavailable")
+    end
+  end
 
   local listState = rawget(ListMenu, "_typedMoveColorsPatch")
   if not listState then
