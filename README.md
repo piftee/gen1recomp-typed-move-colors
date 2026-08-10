@@ -20,6 +20,7 @@ Red, Blue, or Yellow ROM imported into
 ## Where colours appear
 
 - classic and widescreen battle move selection
+- Gen 3 Inspired UI Overhaul's battle move panel
 - Mimic's move picker
 - the Pokémon summary's moves and PP page
 - the move-forgetting screen
@@ -117,6 +118,13 @@ native PP validation and move execution remain unchanged.
 optional companion. Its Start/Q information box remains above the responsive
 selector, and its expanded move-learning list receives coloured current-move
 and NEW MOVE rows while retaining the mod's inspection shortcut and behavior.
+
+[Gen 3 Inspired UI Overhaul](https://github.com/HighDrexler/Gen-3-inspired-UI-overhaul-for-Gen1Recomp-V1.1-w-updater)
+v1.3.2 is also supported. When its revamped battle UI is enabled, Typed Move
+Colors leaves that mod's full-resolution move panel in place and applies the
+selected type palette to its four rounded move rows and TYPE/PP details strip.
+The duplicate responsive selector is suppressed, while the overhaul retains
+its fonts, spacing, PP readouts and battle controls.
 
 When **Move Effect** is on, each responsive battle button gets a small geometric
 indicator in its bottom-right corner: `↑↑` for super-effective, `↑` for
