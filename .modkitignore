@@ -1,4 +1,6 @@
 tests/typed_move_colors_test.lua
 tests/preview_driver.lua
+tests/fixtures/useful_move_info/main.lua
+tests/fixtures/useful_move_info/manifest.json
 .gitignore
 .github/

@@ -44,12 +44,20 @@ mod's own options page:
 Move Layout defaults to **Wide**. If Gen1Recomp is already using its wide
 battle renderer, the mod decorates that grid. Otherwise the mod adds a
 responsive move-only two-by-two panel after the battlefield has been drawn.
-The complete selector scales uniformly to nearly the full screen width and
-occupies the bottom band beneath the battling Pokémon. Pokémon with one or two
-moves use full-height buttons; three or four moves use the two-by-two grid. The
-background, sprites and battle HUD remain owned by the game or another renderer
-such as a staged voxel battle. **Game** restores the engine's original compact
-move list whenever its own Battle Layout setting is `OG`.
+The complete selector chooses a crisp integer scale from both the available
+width and height. On wide, short displays such as Android landscape screens,
+it stays within roughly the bottom third and makes the cards wider at the
+smaller scale, so it still uses the available width without becoming too tall.
+Device safe areas are respected. Pokémon with one or two moves use full-height
+buttons; three or four moves use the two-by-two grid. The background, sprites
+and battle HUD remain owned by the game or another renderer such as a staged
+voxel battle. **Game** restores the engine's original compact move list whenever
+its own Battle Layout setting is `OG`.
+
+On tall mobile displays, the responsive selector follows the same native battle
+row as the original move menu, directly beneath the player's HUD. Bottom docking
+is used only when it is already closer, preventing a large gap or overlap with
+the on-screen controls.
 
 Bold mirrors Modern Party UI: unselected buttons use the strong type shade,
 while the selected button becomes bright with dark text. Soft keeps every face
@@ -104,6 +112,11 @@ Over an `OG` or custom-rendered battle, it removes only the old move-menu pixels
 from the transparent UI layer and draws its grid after the final battlefield
 composition. Directional input is mapped to the same two-by-two arrangement;
 native PP validation and move execution remain unchanged.
+
+[Useful Move Info](https://github.com/ShaneMcGovernIE/useful-move-info) is an
+optional companion. Its Start/Q information box remains above the responsive
+selector, and its expanded move-learning list receives coloured current-move
+and NEW MOVE rows while retaining the mod's inspection shortcut and behavior.
 
 When **Move Effect** is on, each responsive battle button gets a small geometric
 indicator in its bottom-right corner: `↑↑` for super-effective, `↑` for

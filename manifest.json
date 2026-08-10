@@ -1,7 +1,7 @@
 {
   "id": "typed_move_colors",
   "name": "Typed Move Colors",
-  "version": "0.3.1",
+  "version": "0.3.3",
   "github": "piftee/gen1recomp-typed-move-colors",
   "api": 2,
   "entry": "main.lua",
@@ -10,7 +10,7 @@
   "category": "UI",
   "priority": 110,
   "dependencies": [],
-  "optional_dependencies": ["modern_party_ui"],
+  "optional_dependencies": ["modern_party_ui", "useful_move_info"],
   "conflicts": [],
   "incompatible": [],
   "permissions": ["engine_internals"],
