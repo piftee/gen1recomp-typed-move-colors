@@ -85,6 +85,15 @@ return function(mod)
     return value
   end
 
+  local function gen3BattleUIActive(game)
+    local ok, handle = pcall(mod.find, "gen3_battle_ui")
+    if not ok or not handle then return false end
+    local loader = game and game.mods
+    local options = loader and loader.modOptions
+      and loader.modOptions.gen3_battle_ui
+    return not (options and options.revampedBattleUI == false)
+  end
+
   local function engineWide(battle)
     if not (battle and battle.wideLayout) then return false end
     local ok, wide = pcall(battle.wideLayout, battle)
@@ -99,6 +108,7 @@ return function(mod)
   local function detachedGrid(battle)
     return setting("layout", "wide") == "wide"
       and not engineWide(battle)
+      and not gen3BattleUIActive(battle and battle.game)
   end
 
   -- The classic controller treats moves as a vertical list. When the
@@ -136,6 +146,7 @@ return function(mod)
   end
   inputPatch.detached = detachedGrid
   inputPatch.navigate = WideBattle.moveGridIndex
+  inputPatch.gen3BattleUIActive = gen3BattleUIActive
 
   local function isTop(screen)
     local stack = screen and screen.game and screen.game.stack
@@ -416,6 +427,7 @@ return function(mod)
 
   local function renderBattle(battle)
     if not setting("battle_colors", true) then return end
+    if gen3BattleUIActive(battle and battle.game) then return end
     local phase = battle and battle.phase
     if phase ~= "moveSelect" and phase ~= "mimicSelect" then return end
     local moves = phase == "moveSelect"
@@ -663,6 +675,118 @@ return function(mod)
     end
     return result
   end, -100)
+
+  -- Gen 3 Inspired UI Overhaul owns a final-resolution move list instead of
+  -- the engine's 160x144 menu. Keep its layout, typography, PP readout and
+  -- selection controls intact, then multiply the type palette through its
+  -- own rounded rows. Black text stays black, antialiasing is preserved and
+  -- the selected dark row remains visibly selected. This post-link runs
+  -- outside both of Gen 3 UI's render.hud links (10000 and 11000), so it sees
+  -- the finished companion panel and never needs to replace its renderer.
+  local function gen3MoveGeometry(screenW, screenH)
+    local function clamp(value, low, high)
+      return math.max(low, math.min(high, value))
+    end
+    local raw = math.min(screenW / 1280, screenH / 720)
+    local unit
+    if raw <= 1.5 then
+      unit = clamp(raw, 0.68, 1.18)
+    else
+      unit = clamp(1.18 + (raw - 1.5) * 0.75, 1.18, 2.30)
+    end
+    local width = clamp(720 * unit, 470, 1660)
+    local height = clamp(300 * unit, 205, 690)
+    local margin = clamp(24 * unit, 14, 56)
+    return {
+      x = screenW - width - margin,
+      y = screenH - height - margin,
+      w = width,
+      h = height,
+      u = unit,
+    }
+  end
+  inputPatch.gen3MoveGeometry = gen3MoveGeometry
+
+  local function renderGen3BattleColors(game)
+    if not setting("battle_colors", true)
+        or not gen3BattleUIActive(game) then return end
+    local battle = activeBattle(game)
+    if not (battle and battle.phase == "moveSelect"
+        and battle.player and type(battle.player.curMoves) == "table") then
+      return
+    end
+
+    local moves = battle.player.curMoves
+    local screenW, screenH = love.graphics.getDimensions()
+    local rect = gen3MoveGeometry(screenW, screenH)
+    local unit = rect.u
+    local pad = 16 * unit
+    local gap = 8 * unit
+    local infoH = 50 * unit
+    local listTop = rect.y + pad
+    local listBottom = rect.y + rect.h - pad - infoH - 7 * unit
+    local rowH = (listBottom - listTop - gap * 3) / 4
+    local rowW = rect.w - pad * 2
+    local bold = setting("strength", "bold") == "bold"
+    local selected = battle.moveIndex
+    local selectedRect
+
+    love.graphics.push("all")
+    local blendOK = pcall(love.graphics.setBlendMode,
+      "multiply", "premultiplied")
+    if not blendOK then love.graphics.setBlendMode("multiply") end
+
+    for i = 1, 4 do
+      local move = moves[i]
+      local def = move and moveDef(game, move)
+      if def then
+        local colors = colorsFor(game, def.type)
+        local focused = selected == i
+        local face = colors[focused and 2 or (bold and 3 or 2)]
+        local y = listTop + (i - 1) * (rowH + gap)
+        local inset = focused and 0 or 2 * unit
+        love.graphics.setColor(rgb(face))
+        love.graphics.rectangle("fill",
+          rect.x + pad + inset, y + inset,
+          rowW - inset * 2, rowH - inset * 2,
+          (focused and 9 or 7) * unit,
+          (focused and 9 or 7) * unit)
+        if focused then
+          selectedRect = { x = rect.x + pad, y = y, w = rowW, h = rowH }
+        end
+      end
+    end
+
+    local selectedMove = selected and moves[selected]
+    local selectedDef = selectedMove and moveDef(game, selectedMove)
+    if selectedDef then
+      local colors = colorsFor(game, selectedDef.type)
+      local face = colors[bold and 3 or 2]
+      local infoY = rect.y + rect.h - pad - infoH
+      love.graphics.setColor(rgb(face))
+      love.graphics.rectangle("fill", rect.x + pad, infoY,
+        rowW, infoH, 9 * unit, 9 * unit)
+    end
+
+    if selectedRect then
+      love.graphics.setBlendMode("alpha")
+      love.graphics.setLineWidth(math.max(2, math.min(5, 2.25 * unit)))
+      love.graphics.setColor(0, 0, 0, 0.92)
+      love.graphics.rectangle("line", selectedRect.x, selectedRect.y,
+        selectedRect.w, selectedRect.h, 9 * unit, 9 * unit)
+    end
+    love.graphics.pop()
+  end
+
+  mod.hooks:wrap("render.hud", function(next, game, viewport)
+    local result = next(game, viewport)
+    local ok, err = pcall(renderGen3BattleColors, game)
+    if not ok and not mod._typedMoveGen3Warned then
+      mod._typedMoveGen3Warned = true
+      mod.log:warn("Gen 3 battle move colours skipped: %s", tostring(err))
+    end
+    return result
+  end, 12000)
 
   local function renderSummary(screen)
     if not setting("menu_colors", true) or screen.page ~= 2

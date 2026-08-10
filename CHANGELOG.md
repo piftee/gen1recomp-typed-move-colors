@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.4 - 2026-08-10
+
+- Added Gen 3 Inspired UI Overhaul v1.3.2 compatibility for type-coloured battle move rows and its TYPE/PP details strip.
+- Preserved the overhaul's final-resolution panel, smooth fonts, spacing, PP readouts and selection controls instead of drawing a second move selector beside it.
+- Added the Gen 3 overhaul as an optional dependency so the compatibility post-pass always runs after its renderer is registered.
+
 ## 0.3.3 - 2026-08-10
 
 - Kept Useful Move Info's Start/Q battle text box above the detached move selector.

@@ -603,4 +603,120 @@ T.eq(#usefulMarks, 0,
   "Useful Move Info's modal remains above the move-learning colours")
 usefulCombined.release()
 
+-- Gen 3 Inspired UI Overhaul draws its move selector in final screen pixels
+-- after the native battle canvas. Typed Move Colors must yield its detached
+-- panel, keep native vertical input semantics, and tint that finished panel
+-- only after the companion renderer has run.
+local gen3Data = T.fixtures.fresh()
+gen3Data.moves = {
+  FIX_FIRE = { name = "EMBER", type = "FIRE", power = 40, pp = 25 },
+  FIX_WATER = { name = "WATER GUN", type = "WATER", power = 40, pp = 25 },
+  FIX_GRASS = { name = "VINE WHIP", type = "GRASS", power = 35, pp = 10 },
+  FIX_ELECTRIC = {
+    name = "THUNDERBOLT", type = "ELECTRIC", power = 95, pp = 15,
+  },
+}
+Font.load(gen3Data)
+local gen3Combined = T.sdk.loadMods({
+  "mods/typed_move_colors/tests/fixtures/gen3_battle_ui",
+  "mods/typed_move_colors",
+}, { data = gen3Data, dev = true })
+T.eq(#gen3Combined.errors, 0,
+  "loads beside Gen 3 Inspired UI Overhaul without hook conflicts")
+T.eq(gen3Combined.loader.order[1], "gen3_battle_ui",
+  "the Gen 3 companion loads before its Typed Move Colors adapter")
+
+local gen3Battle = {
+  phase = "moveSelect",
+  moveIndex = 2,
+  player = { curMoves = {
+    { id = "FIX_FIRE", pp = 20 },
+    { id = "FIX_WATER", pp = 18 },
+    { id = "FIX_GRASS", pp = 7 },
+    { id = "FIX_ELECTRIC", pp = 12 },
+  } },
+  wideLayout = function() return false end,
+}
+local gen3Stack = {}
+function gen3Stack:top() return gen3Battle end
+local gen3Game = {
+  data = gen3Combined.data,
+  save = { options = {} },
+  mods = gen3Combined.loader,
+  stack = gen3Stack,
+}
+gen3Battle.game = gen3Game
+
+local gen3Patch = rawget(BattleState, "_typedMoveColorsInputPatch")
+T.eq(gen3Patch.detached(gen3Battle), false,
+  "the Gen 3 panel suppresses the duplicate detached selector")
+
+local gen3Graphics = love.graphics
+local gen3RealDimensions = gen3Graphics.getDimensions
+local gen3RealSetColor = gen3Graphics.setColor
+local gen3RealBlend = gen3Graphics.setBlendMode
+local gen3RealRectangle = gen3Graphics.rectangle
+local gen3RealPolygon = gen3Graphics.polygon
+local gen3Blend = "alpha"
+local gen3Color = { 1, 1, 1, 1 }
+local gen3Rects, gen3Polygons = {}, 0
+gen3Graphics.getDimensions = function() return 1280, 720 end
+gen3Graphics.setBlendMode = function(mode, alphaMode)
+  gen3Blend = mode
+  return gen3RealBlend(mode, alphaMode)
+end
+gen3Graphics.setColor = function(r, g, b, a)
+  gen3Color = { r, g, b, a }
+  return gen3RealSetColor(r, g, b, a)
+end
+gen3Graphics.rectangle = function(mode, x, y, w, h, rx, ry)
+  gen3Rects[#gen3Rects + 1] = {
+    mode = mode, x = x, y = y, w = w, h = h,
+    color = gen3Color, blend = gen3Blend,
+  }
+  return gen3RealRectangle(mode, x, y, w, h, rx, ry)
+end
+gen3Graphics.polygon = function(...)
+  gen3Polygons = gen3Polygons + 1
+  if gen3RealPolygon then return gen3RealPolygon(...) end
+end
+
+local gen3DrawOK, gen3DrawErr = pcall(function()
+  Runtime.call("render.hud", function() end, gen3Game,
+    { width = 1280, height = 720 })
+end)
+gen3Graphics.getDimensions = gen3RealDimensions
+gen3Graphics.setColor = gen3RealSetColor
+gen3Graphics.setBlendMode = gen3RealBlend
+gen3Graphics.rectangle = gen3RealRectangle
+gen3Graphics.polygon = gen3RealPolygon
+
+T.check(gen3DrawOK,
+  "Gen 3 finished-frame colours draw: " .. tostring(gen3DrawErr))
+T.check(gen3Game.gen3FixtureDrawn,
+  "the companion retains ownership of its move panel renderer")
+local gen3Tints = {}
+for _, call in ipairs(gen3Rects) do
+  if call.mode == "fill" and call.blend == "multiply" then
+    gen3Tints[#gen3Tints + 1] = call
+  end
+end
+T.eq(#gen3Tints, 5,
+  "all four Gen 3 move rows and its TYPE/PP strip receive type colour")
+T.check(gen3Tints[1].color[1] == 254 / 255
+    and gen3Tints[1].color[2] == 156 / 255
+    and gen3Tints[1].color[3] == 85 / 255,
+  "the Gen 3 Fire row uses the exact bold reference colour")
+T.check(gen3Tints[2].color[1] > 77 / 255
+    and gen3Tints[5].color[1] == 77 / 255,
+  "the selected row stays light while its details strip uses the bold type")
+T.eq(gen3Polygons, 0,
+  "the old chamfered selector is not drawn beside the Gen 3 panel")
+gen3Combined.loader.modOptions.gen3_battle_ui = {
+  revampedBattleUI = false,
+}
+T.eq(gen3Patch.detached(gen3Battle), true,
+  "the responsive selector returns when the Gen 3 battle UI is disabled")
+gen3Combined.release()
+
 T.finish("typed_move_colors")
