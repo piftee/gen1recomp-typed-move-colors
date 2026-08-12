@@ -55,7 +55,10 @@ SummaryMenu.draw = function(self) self.baseDrawn = true end
 MoveLearnMenu.draw = function(self) self.baseDrawn = true end
 ListMenu.draw = function(self) self.baseDrawn = true end
 
-local run = T.sdk.loadMod("mods/typed_move_colors", { data = data, dev = true })
+local run = T.sdk.loadMods({
+  "mods/typed_move_colors/tests/fixtures/battle_art_voxel_fork",
+  "mods/typed_move_colors",
+}, { data = data, dev = true })
 T.eq(#run.errors, 0, "loads clean (" .. tostring(run.errors[1]) .. ")")
 
 local schema = run.loader.optionSchemas.typed_move_colors or {}
@@ -101,6 +104,17 @@ T.eq(inputPatch.navigate(1, 4, "right"), 2,
   "the detached panel maps RIGHT across its first row")
 T.eq(inputPatch.navigate(2, 4, "down"), 4,
   "the detached panel maps DOWN into its second row")
+T.eq(inputPatch.detachedSurfaceFits(160, 144, 1, 1), true,
+  "a 160x144 faithful surface retains the normal detached selector")
+T.eq(inputPatch.detachedSurfaceFits(140, 144, 1, 1), false,
+  "a genuinely sub-minimum surface still uses the compact fallback")
+local faithfulLayout = inputPatch.detachedLayout(160, 144)
+T.eq(faithfulLayout.scale, 0.5,
+  "Faithful 1x uses the normal selector geometry at half scale")
+T.check(faithfulLayout.originX >= 0
+    and faithfulLayout.originX + faithfulLayout.panelW
+      * faithfulLayout.scale <= 160,
+  "the half-scale normal selector fits the faithful drawable width")
 
 local androidLayout = inputPatch.detachedLayout(1600, 845)
 T.eq(androidLayout.scale, 3,
@@ -128,6 +142,13 @@ T.eq(portraitLayout.scale, 1,
   "a narrow portrait display lets width remain the limiting dimension")
 T.check(portraitLayout.panelW <= 344,
   "the narrow layout fits its card geometry inside the available width")
+local touchClearedPortrait = inputPatch.detachedLayout(
+  360, 800, 0, 0, 360, 800, nil, 653)
+T.eq(touchClearedPortrait.originY, 565,
+  "portrait fallback docks immediately above the visible touch controls")
+T.check(touchClearedPortrait.originY + touchClearedPortrait.panelH
+    * touchClearedPortrait.scale < 653,
+  "the portrait selector leaves a margin above the D-pad and A/B buttons")
 
 local anchoredPortrait = inputPatch.detachedLayout(
   920, 2048, 0, 0, 920, 2048, 1184)
@@ -192,10 +213,11 @@ local realRectangle = graphics.rectangle
 local realPolygon = graphics.polygon
 local realSetColor = graphics.setColor
 local realTranslate = graphics.translate
+local realScale = graphics.scale
 local realFontDraw = Font.draw
 local realMark = PaletteFX.markTrueColor
 local panels, buttonLayers, circles, marks, text = {}, {}, {}, {}, {}
-local translations = {}
+local translations, scales = {}, {}
 local activeColor
 graphics.setColor = function(r, g, b, a)
   activeColor = { r, g, b, a }
@@ -222,6 +244,10 @@ end
 graphics.translate = function(x, y)
   translations[#translations + 1] = { x = x, y = y }
   return realTranslate(x, y)
+end
+graphics.scale = function(x, y)
+  scales[#scales + 1] = { x = x, y = y }
+  return realScale(x, y)
 end
 PaletteFX.markTrueColor = function(x, y, w, h)
   marks[#marks + 1] = { x = x, y = y, w = w, h = h }
@@ -299,11 +325,109 @@ battle.restoredPlayerHud = nil
 battle.dramaticShapeShot = { canvas = true }
 panels, buttonLayers, circles, marks, text = {}, {}, {}, {}, {}
 Runtime.call("battle.overlay", function() end, battle)
+T.eq(#panels, 0,
+  "Battle Art battles never erase or repaint its transparent UI canvas")
 T.eq(battle.restoredPlayerPic, nil,
   "a staged voxel battle retains sole ownership of its player Pokemon")
 T.eq(battle.restoredPlayerHud, nil,
   "a staged voxel battle retains sole ownership of its player HUD")
+
+inputPatch.trackPresentationBattle(battle)
+local presentation = run.loader.exports.BATTLE_ART_VOXEL_FORK
+  .battlePresentation
+local textClaim = Runtime.call(presentation.suppressHook,
+  function() return false end, {
+    apiVersion = 1,
+    sourceModId = "BATTLE_ART_VOXEL_FORK",
+    surface = "text",
+    battle = battle,
+  })
+local panelClaim = Runtime.call(presentation.suppressHook,
+  function() return false end, {
+    apiVersion = 1,
+    sourceModId = "BATTLE_ART_VOXEL_FORK",
+    surface = "panels",
+  })
+local hudClaim = Runtime.call(presentation.suppressHook,
+  function() return false end, {
+    apiVersion = 1,
+    sourceModId = "BATTLE_ART_VOXEL_FORK",
+    surface = "hud",
+    battle = battle,
+  })
+T.eq(textClaim, true,
+  "Battle Art yields its native move-menu text to the detached selector")
+T.eq(panelClaim, true,
+  "Battle Art omits the obsolete TYPE/PP backing panel during selection")
+T.eq(hudClaim, false,
+  "Battle Art retains ownership of Pokemon names, levels and HP bars")
 battle.dramaticShapeShot = nil
+
+-- A macOS Faithful 1x window is only 160 drawable units even when the OS
+-- captures it at 320 Retina pixels. Keep the normal two-by-two selector and
+-- its grid input, but render that same geometry at half scale.
+local realDimensions = graphics.getDimensions
+local realPixelDimensions = graphics.getPixelDimensions
+local realSafeArea = love.window and love.window.getSafeArea
+graphics.getDimensions = function() return 160, 144 end
+graphics.getPixelDimensions = function() return 160, 144 end
+if love.window then
+  love.window.getSafeArea = function() return 0, 0, 160, 144 end
+end
+battle.restoredPlayerPic = nil
+battle.restoredPlayerHud = nil
+panels, buttonLayers, circles, marks, text = {}, {}, {}, {}, {}
+local faithfulOK, faithfulErr = pcall(function()
+  Runtime.call("battle.overlay", function() end, battle)
+end)
+T.check(faithfulOK,
+  "Faithful 1x native menu cleanup succeeds: " .. tostring(faithfulErr))
+T.eq(#marks, 0,
+  "Faithful 1x keeps move cards in the normal finished-frame selector")
+T.eq(#panels, 2,
+  "Faithful 1x removes only the native type and move-menu regions")
+T.check(battle.restoredPlayerPic ~= nil,
+  "Faithful 1x retains normal detached battle-surface restoration")
+
+buttonLayers, translations, scales = {}, {}, {}
+Runtime.call("render.hud", function() end, game, {
+  width = 160, height = 144,
+  gameX = 0, gameY = 0, gameWidth = 160, gameHeight = 144,
+  scale = 1, dpiX = 1, dpiY = 1,
+})
+local faithfulCards = {}
+for _, layer in ipairs(buttonLayers) do
+  if #layer.points == 16 then faithfulCards[#faithfulCards + 1] = layer end
+end
+T.eq(#faithfulCards, 15,
+  "Faithful 1x retains four normal move cards and the PP details card")
+T.eq(scales[1] and scales[1].x, 0.5,
+  "Faithful 1x applies the normal selector's half-scale transform")
+T.check((translations[1] and translations[1].x or -1) >= 0,
+  "Faithful 1x normal selector starts inside the drawable")
+
+graphics.getDimensions = function() return 140, 144 end
+graphics.getPixelDimensions = function() return 140, 144 end
+if love.window then
+  love.window.getSafeArea = function() return 0, 0, 140, 144 end
+end
+T.eq(inputPatch.detached(battle), false,
+  "a truly sub-minimum window uses the compact fallback")
+panels = {}
+Runtime.call("battle.overlay", function() end, battle)
+local sawCompactTypeMask = false
+for _, panel in ipairs(panels) do
+  if panel.x == 8 and panel.y == 72
+      and panel.w == 72 and panel.h == 16 then
+    sawCompactTypeMask = true
+    break
+  end
+end
+T.check(sawCompactTypeMask,
+  "the compact fallback erases native TYPE text while preserving its PP row")
+graphics.getDimensions = realDimensions
+graphics.getPixelDimensions = realPixelDimensions
+if love.window then love.window.getSafeArea = realSafeArea end
 
 panels, buttonLayers, circles, marks, text = {}, {}, {}, {}, {}
 local hudOK, hudErr = pcall(function()
@@ -320,7 +444,7 @@ for _, layer in ipairs(buttonLayers) do
   if #layer.points == 16 then cardLayers[#cardLayers + 1] = layer end
 end
 T.eq(#cardLayers, 15,
-  "four move buttons and one PP/type card use the layered card hierarchy")
+  "four move buttons and one PP card use the layered card hierarchy")
 T.eq(#marks, 0,
   "the finished-frame panel does not write stale canvas palette marks")
 T.eq(cardLayers[5].color[1], 0,
@@ -330,12 +454,19 @@ T.check(cardLayers[3].color[1] == 254 / 255
     and cardLayers[3].color[3] == 85 / 255,
   "the unselected Fire card face renders with the exact reference colour")
 local sawPP, sawSelectedPP = false, false
+local sawBattleTypeText = false
 for _, call in ipairs(text) do
   if call.value == "PP" then sawPP = true end
   if call.value == "18/25" then sawSelectedPP = true end
+  if call.value == "WATER" or call.value == "WTR"
+      or call.value == "FGT" or call.value == "TYPE/" then
+    sawBattleTypeText = true
+  end
 end
 T.check(sawPP and sawSelectedPP,
   "the side details card shows the selected move's current and maximum PP")
+T.eq(sawBattleTypeText, false,
+  "battle cards and PP details never print a move type")
 T.eq(#circles, 0,
   "ordinary, resisted and super-effective HP attacks use arrows, not circles")
 T.eq(#panels, 2,
@@ -443,14 +574,16 @@ T.check(summaryOK, "summary move colours draw: " .. tostring(summaryErr))
 T.check(summary.baseDrawn, "the native summary presentation runs first")
 T.eq(#marks, 4, "all four summary rows are tinted")
 T.eq(marks[1].x, 8, "summary chips stay inside the native move box")
-T.eq(marks[1].w, 144, "summary chips retain room for PP and type")
-local sawFireLabel, sawWaterLabel = false, false
+T.eq(marks[1].w, 144, "summary chips retain room for PP")
+local sawTypeLabel = false
 for _, call in ipairs(text) do
-  if call.value == "FIR" then sawFireLabel = true end
-  if call.value == "WTR" then sawWaterLabel = true end
+  if call.value == "FIR" or call.value == "WTR"
+      or call.value == "FGT" or call.value == "NRM" then
+    sawTypeLabel = true
+  end
 end
-T.check(sawFireLabel and sawWaterLabel,
-  "summary rows include readable type abbreviations")
+T.eq(sawTypeLabel, false,
+  "summary rows never print redundant type abbreviations")
 
 panels, buttonLayers, marks, text = {}, {}, {}, {}
 local learner = setmetatable({ game = game, selecting = true, index = 2,
@@ -493,6 +626,7 @@ graphics.polygon = realPolygon
 graphics.circle = realCircle
 graphics.setColor = realSetColor
 graphics.translate = realTranslate
+graphics.scale = realScale
 Font.draw = realFontDraw
 PaletteFX.markTrueColor = realMark
 PaletteFX.setMode(previousMode)
@@ -702,7 +836,7 @@ for _, call in ipairs(gen3Rects) do
   end
 end
 T.eq(#gen3Tints, 5,
-  "all four Gen 3 move rows and its TYPE/PP strip receive type colour")
+  "all four Gen 3 move rows and its PP strip receive type colour")
 T.check(gen3Tints[1].color[1] == 254 / 255
     and gen3Tints[1].color[2] == 156 / 255
     and gen3Tints[1].color[3] == 85 / 255,
@@ -710,6 +844,17 @@ T.check(gen3Tints[1].color[1] == 254 / 255
 T.check(gen3Tints[2].color[1] > 77 / 255
     and gen3Tints[5].color[1] == 77 / 255,
   "the selected row stays light while its details strip uses the bold type")
+local sawGen3TypeMask, sawGen3Tint = false, false
+for _, call in ipairs(gen3Rects) do
+  if call.mode == "fill" and call.blend == "multiply" then
+    sawGen3Tint = true
+  elseif sawGen3Tint and call.mode == "fill" and call.blend == "alpha"
+      and call.x > 100 and call.w > 0 then
+    sawGen3TypeMask = true
+  end
+end
+T.check(sawGen3TypeMask,
+  "the Gen 3 details strip removes repeated TYPE text but preserves PP")
 T.eq(gen3Polygons, 0,
   "the old chamfered selector is not drawn beside the Gen 3 panel")
 gen3Combined.loader.modOptions.gen3_battle_ui = {

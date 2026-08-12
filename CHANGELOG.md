@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.5 - 2026-08-12
+
+- Kept the normal detached two-by-two selector at Faithful 1x by fitting its full geometry at half scale, with per-axis DPI correction where the window exposes a high-resolution framebuffer.
+- Removed explicit move-type names and three-letter abbreviations from battle buttons, summary rows and companion details; card colour remains the sole type treatment.
+- Preserved PP information while removing the repeated TYPE text from both native compact fallback and Gen 3 Inspired UI Overhaul presentations.
+- Added Battle Art v1.8.3 presentation-contract support, allowing its native move text and obsolete TYPE/PP backing panel to be suppressed without erasing its transparent arena canvas or redrawing Crystal Animated sprites.
+- Anchored portrait selectors above the live customized D-pad/A/B layout when Battle Art or another composition cannot provide the normal battle-row anchor.
+
 ## 0.3.4 - 2026-08-10
 
 - Added Gen 3 Inspired UI Overhaul v1.3.2 compatibility for type-coloured battle move rows and its TYPE/PP details strip.

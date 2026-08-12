@@ -10,13 +10,13 @@ return {
     },
     added = {
       "Chamfered move buttons using an exact reference-derived type palette",
-      "A width-and-height-responsive two-by-two grid with PP/type details and a Game-controlled fallback",
+      "A width-, height- and DPI-responsive two-by-two grid with PP details and a Game-controlled fallback",
       "Useful Move Info compatibility for battle text and move-learning rows",
-      "Gen 3 Inspired UI Overhaul compatibility for its move rows and TYPE/PP strip",
+      "Gen 3 Inspired UI Overhaul compatibility for its move rows and PP strip",
+      "Battle Art compatibility through its native presentation contract, including Crystal Animated sprite-safe menu suppression",
       "Optional arrow and circle effectiveness indicators on responsive battle move buttons",
       "A dominant black selected frame with a raised focus state",
       "Battle, layout, effectiveness, menu and tint-strength settings in the main Options screen",
-      "Three-letter type labels on the summary move page",
     },
     known = {
       "Unknown custom types use the neutral Normal palette",
