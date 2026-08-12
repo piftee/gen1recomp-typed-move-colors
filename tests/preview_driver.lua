@@ -84,6 +84,13 @@ return function(game)
   U.log("PASS standard renderer restores the complete player sprite")
   U.shot(game, DIR .. "/typed_move_battle_standard.png")
 
+  battle.phase = "menu"
+  battle.menuIndex = 1
+  U.wait(4)
+  U.log("PASS Wide command cards replace the native action box")
+  U.shot(game, DIR .. "/typed_move_battle_commands.png")
+  battle.phase = "moveSelect"
+
   effectHints(false)
   U.wait(3)
   U.log("PASS Move Effect off removes every indicator")

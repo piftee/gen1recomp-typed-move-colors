@@ -19,6 +19,7 @@ data.moves = {
   FIX_ELECTRIC = {
     name = "THUNDERBOLT", type = "ELECTRIC", power = 95, pp = 15,
   },
+  FIX_STATUS = { name = "GROWL", type = "NORMAL", power = 0, pp = 40 },
 }
 data.type_chart.matchups[#data.type_chart.matchups + 1] = {
   attacker = "ELECTRIC", defender = "GROUND", multiplier = 0,
@@ -264,6 +265,7 @@ local moves = {
 }
 local battle = {
   game = game,
+  data = game.data,
   phase = "moveSelect",
   moveIndex = 2,
   player = { curMoves = moves },
@@ -308,17 +310,20 @@ local detachedOK, detachedErr = pcall(function()
   Runtime.call("battle.overlay", function() end, battle)
 end)
 T.check(detachedOK,
-  "detached grid erases the native menu safely: " .. tostring(detachedErr))
+  "detached grid leaves the battle canvas untouched: " .. tostring(detachedErr))
 T.eq(#marks, 0,
   "detached mode leaves the battlefield renderer and palette zones alone")
-T.eq(#panels, 2,
-  "only the native TYPE/PP and move-menu regions are cleared")
+T.eq(#panels, 0,
+  "detached mode does not erase TYPE/PP or move-menu rectangles afterward")
+BattleState.drawTextArea(battle)
+T.eq(#panels, 0,
+  "Wide suppresses the complete native move GUI before any box is drawn")
 T.eq(battle.restoredPlayerPic.onlySide, "player",
-  "standard detached battles restore only the player's sprite")
+  "flat detached battles restore only the natively clipped player sprite")
 T.eq(battle.restoredPlayerPic.skipMenuClip, true,
-  "the restored standard sprite is no longer clipped by the removed menu")
-T.eq(battle.restoredPlayerHud.slide, 0,
-  "the erased edge of the live player HP/EXP HUD is restored")
+  "the restored flat-battle sprite is complete without a TYPE/PP clip")
+T.eq(battle.restoredPlayerHud, nil,
+  "no post-erasure HUD redraw is necessary")
 
 battle.restoredPlayerPic = nil
 battle.restoredPlayerHud = nil
@@ -381,13 +386,16 @@ local faithfulOK, faithfulErr = pcall(function()
   Runtime.call("battle.overlay", function() end, battle)
 end)
 T.check(faithfulOK,
-  "Faithful 1x native menu cleanup succeeds: " .. tostring(faithfulErr))
+  "Faithful 1x presentation succeeds: " .. tostring(faithfulErr))
 T.eq(#marks, 0,
   "Faithful 1x keeps move cards in the normal finished-frame selector")
-T.eq(#panels, 2,
-  "Faithful 1x removes only the native type and move-menu regions")
+T.eq(#panels, 0,
+  "Faithful 1x never writes transparent cleanup rectangles into the battle")
+BattleState.drawTextArea(battle)
+T.eq(#panels, 0,
+  "Faithful 1x suppresses native TYPE/PP and move boxes before drawing")
 T.check(battle.restoredPlayerPic ~= nil,
-  "Faithful 1x retains normal detached battle-surface restoration")
+  "Faithful 1x retains the complete standard player sprite")
 
 buttonLayers, translations, scales = {}, {}, {}
 Runtime.call("render.hud", function() end, game, {
@@ -454,19 +462,25 @@ T.check(cardLayers[3].color[1] == 254 / 255
     and cardLayers[3].color[3] == 85 / 255,
   "the unselected Fire card face renders with the exact reference colour")
 local sawPP, sawSelectedPP = false, false
-local sawBattleTypeText = false
+local sawFullType, sawPower, sawBasePower = false, false, false
+local sawAbbreviatedType = false
 for _, call in ipairs(text) do
   if call.value == "PP" then sawPP = true end
   if call.value == "18/25" then sawSelectedPP = true end
-  if call.value == "WATER" or call.value == "WTR"
-      or call.value == "FGT" or call.value == "TYPE/" then
-    sawBattleTypeText = true
+  if call.value == "WATER" then sawFullType = true end
+  if call.value == "POWER" then sawPower = true end
+  if call.value == "40" then sawBasePower = true end
+  if call.value == "WTR" or call.value == "FGT"
+      or call.value == "TYPE/" then
+    sawAbbreviatedType = true
   end
 end
 T.check(sawPP and sawSelectedPP,
   "the side details card shows the selected move's current and maximum PP")
-T.eq(sawBattleTypeText, false,
-  "battle cards and PP details never print a move type")
+T.check(sawFullType and sawPower and sawBasePower,
+  "the side details card shows the full move type and base power")
+T.eq(sawAbbreviatedType, false,
+  "the side details card never falls back to three-letter type labels")
 T.eq(#circles, 0,
   "ordinary, resisted and super-effective HP attacks use arrows, not circles")
 T.eq(#panels, 2,
@@ -480,6 +494,82 @@ T.eq(#arrowLayers, 5,
 T.check(arrowLayers[1].points[1] > 90
     and arrowLayers[1].points[2] > 20,
   "effect indicators sit in the bottom-right corner of their move cards")
+
+local selectedWater = moves[2]
+moves[2] = { id = "FIX_STATUS", pp = 39 }
+text, buttonLayers = {}, {}
+Runtime.call("render.hud", function() end, game, {
+  width = 1024, height = 768,
+  gameX = 112, gameY = 24, gameWidth = 800, gameHeight = 720,
+  scale = 5,
+})
+local sawNoBasePower = false
+for _, call in ipairs(text) do
+  if call.value == "---" then sawNoBasePower = true end
+end
+T.eq(sawNoBasePower, true,
+  "status moves show a dash instead of a misleading zero base power")
+moves[2] = selectedWater
+
+-- WIDE owns the preceding command phase too, so selecting FIGHT no longer
+-- swaps from a classic Game Boy menu into the finished-frame move selector.
+battle.phase = "menu"
+battle.menuIndex = 3
+panels, buttonLayers, text = {}, {}, {}
+BattleState.drawTextArea(battle)
+T.eq(#panels, 0,
+  "Wide suppresses the native FIGHT/PKMN/ITEM/RUN box before drawing")
+Runtime.call("render.hud", function() end, game, {
+  width = 1024, height = 768,
+  gameX = 112, gameY = 24, gameWidth = 800, gameHeight = 720,
+  scale = 5,
+})
+local sawFight, sawPkmn, sawItem, sawRun = false, false, false, false
+for _, call in ipairs(text) do
+  if call.value == "FIGHT" then sawFight = true end
+  if call.value == "PKMN" then sawPkmn = true end
+  if call.value == "ITEM" then sawItem = true end
+  if call.value == "RUN" then sawRun = true end
+end
+T.check(sawFight and sawPkmn and sawItem and sawRun,
+  "the finished-frame Wide command panel draws all four native actions")
+T.eq(#buttonLayers, 15,
+  "four command cards and one prompt card share the move selector hierarchy")
+local promptX, fightX
+for _, call in ipairs(text) do
+  if call.value == "WHAT WILL" then promptX = call.x end
+  if call.value == "FIGHT" then fightX = call.x end
+end
+T.check(promptX and fightX and promptX < fightX,
+  "the WHAT WILL prompt card sits to the left of the action grid")
+
+-- A transition/modal may become topmost while the battle is still included
+-- in the visible stack for one closing draw. The native battle canvas must
+-- stay suppressed underneath it even though the modern controls are hidden.
+current = { closingTransition = true }
+panels = {}
+BattleState.drawTextArea(battle)
+T.eq(#panels, 0,
+  "closing overlays cannot expose one final native command-menu frame")
+current = battle
+
+battle.phase = "messages"
+battle.current = { text = true }
+battle.shown = {}
+panels, buttonLayers = {}, {}
+BattleState.drawTextArea(battle)
+T.eq(#panels, 0,
+  "Wide suppresses the native battle dialogue slab before drawing")
+Runtime.call("render.hud", function() end, game, {
+  width = 1024, height = 768,
+  gameX = 112, gameY = 24, gameWidth = 800, gameHeight = 720,
+  scale = 5,
+})
+T.eq(#buttonLayers, 3,
+  "battle dialogue uses one neutral finished-frame card in Wide mode")
+battle.current = nil
+battle.shown = nil
+battle.phase = "moveSelect"
 
 buttonLayers = {}
 current = { usefulMoveInfoTextBox = true }
@@ -531,6 +621,10 @@ battle.enemy.curTypes = { "GRASS" }
 
 -- GAME restores the original compact overlay when the engine itself is OG.
 rows[3].step(game, 1)
+panels, buttonLayers, marks, text = {}, {}, {}, {}
+BattleState.drawTextArea(battle)
+T.check(#panels > 0,
+  "GAME mode leaves native move GUI drawing completely unchanged")
 panels, buttonLayers, marks, text = {}, {}, {}, {}
 local battleOK, battleErr = pcall(function()
   Runtime.call("battle.overlay", function() end, battle)

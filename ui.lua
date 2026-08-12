@@ -99,12 +99,6 @@ return function(mod)
     return presentation
   end
 
-  local function battleArtOwnsBattle(battle)
-    return battleArtPresentation() ~= nil and battle ~= nil
-      and (rawget(battle, "dramaticShapeShot") ~= nil
-        or battle.letterboxWhite == false)
-  end
-
   local function engineWide(battle)
     if not (battle and battle.wideLayout) then return false end
     local ok, wide = pcall(battle.wideLayout, battle)
@@ -142,11 +136,11 @@ return function(mod)
     return screenW * dpiX >= 152 and screenH * dpiY >= 44
   end
 
-  -- WIDE now owns only the move selector. If the engine itself is already
-  -- wide, the in-canvas overlay below decorates that grid. Otherwise a
-  -- window-space panel supplies the same 2x2 grid without changing the
-  -- battlefield canvas, HUDs, sprites or background. This is the seam staged
-  -- voxel battles need: they keep their transparent 160px scene intact.
+  -- If the engine itself is already wide, the in-canvas overlay below
+  -- decorates that grid. Otherwise a window-space presenter supplies the
+  -- command, dialogue and 2x2 move phases without changing the battlefield
+  -- canvas, HUDs, sprites or background. This is the seam staged voxel
+  -- battles need: they keep their transparent 160px scene intact.
   local function detachedGrid(battle)
     return setting("layout", "wide") == "wide"
       and not engineWide(battle)
@@ -200,17 +194,17 @@ return function(mod)
     return not (stack and stack.top) or stack:top() == screen
   end
 
-  local function battleArtDetachedPresenter(battle)
-    if not setting("battle_colors", true) or not isTop(battle) then
-      return false
-    end
+  local function widePresentationOwnsPhase(battle)
+    if not setting("battle_colors", true) then return false end
     local phase = battle and battle.phase
-    return (phase == "moveSelect" or phase == "mimicSelect")
-      and detachedGrid(battle)
+    local owned = phase == "moveSelect" or phase == "mimicSelect"
+      or (phase == "menu" and not battle.safari and not battle.demo)
+      or phase == "messages"
+    return owned and detachedGrid(battle)
   end
 
   inputPatch.trackPresentationBattle = function(battle)
-    if battleArtDetachedPresenter(battle) then
+    if widePresentationOwnsPhase(battle) then
       inputPatch.presentationBattle = battle
     elseif inputPatch.presentationBattle == battle then
       inputPatch.presentationBattle = nil
@@ -218,10 +212,11 @@ return function(mod)
   end
 
   -- Battle Art 1.8.3 publishes a presentation contract for replacement UIs.
-  -- Claim its native menu text and backing panels only while this detached
-  -- selector is actually visible. This prevents Battle Art from baking the
-  -- old TYPE/PP rectangle into its world canvas, and avoids touching the
-  -- transparent 160x144 canvas that Crystal Animated's sprites compose with.
+  -- Claim its native text and backing panels only while this finished-frame
+  -- Wide presentation is actually visible. This prevents Battle Art from
+  -- baking old command/dialogue/TYPE/PP rectangles into its world canvas, and
+  -- avoids touching the transparent 160x144 canvas that Crystal Animated's
+  -- sprites compose with.
   local battleArt = battleArtPresentation()
   if battleArt then
     mod.hooks:wrap(battleArt.suppressHook, function(next, request)
@@ -231,7 +226,7 @@ return function(mod)
         return claimed
       end
       local battle = request.battle or inputPatch.presentationBattle
-      if not battleArtDetachedPresenter(battle) then return claimed end
+      if not widePresentationOwnsPhase(battle) then return claimed end
       if request.surface == battleArt.surfaces.text
           or request.surface == battleArt.surfaces.panels then
         return true
@@ -239,6 +234,24 @@ return function(mod)
       return claimed
     end, 9000)
   end
+
+  -- Prevent the native boxes from being drawn in the first place. Erasing
+  -- them after BattleState.drawTextArea had already painted opaque paper is
+  -- what produced WORLD-shaped holes, retained RGB rectangles on translucent
+  -- renderers, and the stray TYPE/PP slab visible with Fancy Battle/Battle
+  -- Art. The wrapper is process-stable across mod reloads, like the input
+  -- patch above, and GAME mode always falls through to the engine unchanged.
+  local textPatch = rawget(BattleState, "_typedMoveColorsTextPatch")
+  if not textPatch then
+    textPatch = { original = BattleState.drawTextArea }
+    rawset(BattleState, "_typedMoveColorsTextPatch", textPatch)
+    BattleState.drawTextArea = function(self, ...)
+      if textPatch.owns and textPatch.owns(self) then return end
+      return textPatch.original(self, ...)
+    end
+  end
+  textPatch.owns = widePresentationOwnsPhase
+  inputPatch.widePresentationOwnsPhase = widePresentationOwnsPhase
 
   local function moveDef(game, move)
     local id = type(move) == "table" and move.id or move
@@ -373,6 +386,19 @@ return function(mod)
     love.graphics.pop()
   end
 
+  local function drawCodeInk(code, x, y, color)
+    love.graphics.push("all")
+    local shader = shaderForInk()
+    if shader then
+      love.graphics.setShader(shader)
+      love.graphics.setColor(rgb(color))
+    else
+      love.graphics.setColor(0, 0, 0, 1)
+    end
+    Font.drawCode(code, math.floor(x), math.floor(y))
+    love.graphics.pop()
+  end
+
   local function chamfer(mode, x, y, w, h, cut)
     cut = math.max(1, math.min(cut or 2,
       math.floor(w / 2), math.floor(h / 2)))
@@ -394,29 +420,11 @@ return function(mod)
     love.graphics.rectangle("fill", x, y, w, h)
   end
 
-  -- Remove an already-drawn native menu from the transparent UI canvas.
-  -- Replace blending writes alpha zero instead of painting paper, so a voxel
-  -- or other custom battlefield remains visible underneath the detached
-  -- panel. The real LÖVE runtime supports this blend mode; the guarded
-  -- fallback keeps headless tooling harmless.
-  local function eraseRegion(x, y, w, h)
-    local g = love.graphics
-    g.push("all")
-    if g.setBlendMode then
-      pcall(g.setBlendMode, "replace", "premultiplied")
-    end
-    g.setColor(0, 0, 0, 0)
-    g.rectangle("fill", x, y, w, h)
-    g.pop()
-  end
-
-  -- Classic move selection clips the player pic at y=64 because the Game
-  -- Boy TYPE/PP box replaced those tile rows. The detached selector removes
-  -- that box, so a flat battle needs its complete player pic drawn once more
-  -- after cleanup. Staged renderers deliberately own the Pokemon themselves:
-  -- Voxel Battle Art exposes its live shot on the battle and makes the battle
-  -- surface transparent, either of which keeps this compatibility redraw out
-  -- of its composition.
+  -- BattleState clips the native player picture at the TYPE/PP row whenever
+  -- moveSelect is active, even when drawTextArea itself is suppressed. Flat
+  -- battles therefore need one player-only redraw with that menu clip
+  -- disabled. Transparent/custom renderers expose their own shot or clear the
+  -- white letterbox and retain sole ownership of Pokemon composition.
   local function restoreDetachedPlayerPic(battle)
     if not (battle and battle.drawPicsLayer) then return end
     if rawget(battle, "dramaticShapeShot") ~= nil
@@ -429,34 +437,8 @@ return function(mod)
     if sx == 0 and sy == 0 and fx and fx.shake and fx.shake > 0 then
       sx = (battle.frame or 0) % 4 < 2 and 2 or -2
     end
-    -- Gen1Recomp advances the intro at four pixels per draw. Move selection
-    -- normally has no remaining slide, but mirroring it keeps this redraw
-    -- correct for custom transitions into the menu.
     local slide = (battle.introSlide or 0) * 4
     battle:drawPicsLayer(slide, sx, sy, "player", true)
-  end
-
-  -- The native TYPE/PP box is 11 tiles wide. Its final tile overlaps the
-  -- left edge of the player HUD, so erasing the complete box also removes
-  -- the first half of the HP label (and Battle Info HUD's wider EXP label).
-  -- Re-run the live HUD renderer through a narrow scissor after cleanup.
-  -- Calling the live method is intentional: companion HUD mods that wrap
-  -- drawHUDs get to restore their own pixels instead of this mod attempting
-  -- to recreate or overwrite their presentation.
-  local function restoreDetachedPlayerHud(battle)
-    if not (battle and type(battle.drawHUDs) == "function") then return end
-    if rawget(battle, "dramaticShapeShot") ~= nil
-        or battle.letterboxWhite == false then
-      return
-    end
-    local g = love.graphics
-    g.push("all")
-    g.setScissor(56, 48, 32, 48)
-    local ok, err = pcall(battle.drawHUDs, battle, 0)
-    g.pop()
-    if not ok then
-      mod.log:warn("could not restore detached player HUD: %s", tostring(err))
-    end
   end
 
   -- Mirrors Modern Party UI's card hierarchy at the scale available here:
@@ -522,23 +504,10 @@ return function(mod)
     if type(moves) ~= "table" then return end
 
     if detachedGrid(battle) then
-      -- Battle Art has already yielded its native text/panel surfaces through
-      -- battle.presentation.suppress_native.v1. Its arena and animated
-      -- Pokemon are renderer-owned, so no canvas erasure or sprite redraw is
-      -- necessary (and either would corrupt that finished composition).
-      if battleArtOwnsBattle(battle) then return end
-      -- TYPE/PP occupies (0,64)-(88,104), while the move list occupies the
-      -- bottom 160x48 box. Remove only those native menu pixels: the player's
-      -- status block to their right and every battlefield pixel stay owned by
-      -- the engine/custom renderer.
-      if phase == "moveSelect" then
-        eraseRegion(0, 64, 88, 40)
-        eraseRegion(0, 96, 160, 48)
-        restoreDetachedPlayerHud(battle)
-        restoreDetachedPlayerPic(battle)
-      else
-        eraseRegion(0, 56, 128, 48)
-      end
+      -- The class-level drawTextArea wrapper already omitted the complete
+      -- native menu before it touched the UI canvas. The finished-frame Wide
+      -- presenter below is now the only owner of these phases.
+      if phase == "moveSelect" then restoreDetachedPlayerPic(battle) end
       return
     end
 
@@ -597,7 +566,9 @@ return function(mod)
   local function activeBattle(game)
     local stack = game and game.stack
     local top = stack and stack.top and stack:top() or nil
-    if top and (top.phase == "moveSelect" or top.phase == "mimicSelect") then
+    local phase = top and top.phase
+    if phase == "moveSelect" or phase == "mimicSelect"
+        or phase == "menu" or phase == "messages" then
       return top
     end
   end
@@ -636,7 +607,7 @@ return function(mod)
     local panelW = math.max(240,
       math.floor((safeW - margin * 2) / scale))
 
-    local detailW = math.max(72,
+    local detailW = math.max(80,
       math.min(128, math.floor(panelW * 0.26)))
     local detailX = panelW - detailW - 2
     local gridX = 2
@@ -701,7 +672,63 @@ return function(mod)
   end
   inputPatch.portraitControlsTop = portraitControlsTop
 
-  -- Responsive move-only panel drawn after the completed world/UI composite.
+  local function drawDetachedCommandPanel(game, battle, layout)
+    local labels = { "FIGHT", "PKMN", "ITEM", "RUN" }
+    local promptX, promptW = 2, layout.detailW
+    local actionX = promptX + promptW + 4
+    local actionRight = layout.panelW - 2
+    local actionGap = 3
+    local actionLeftW = math.floor((actionRight - actionX - actionGap) / 2)
+    local actionRightX = actionX + actionLeftW + actionGap
+    local actionRightW = actionRight - actionRightX
+    for i, label in ipairs(labels) do
+      local col = (i - 1) % 2
+      local row = math.floor((i - 1) / 2)
+      local x = col == 0 and actionX or actionRightX
+      local y = 2 + row * 38
+      local w = col == 0 and actionLeftW or actionRightW
+      drawButton(game, "NORMAL", x, y, w, 36,
+        battle.menuIndex == i, false, function(foreground)
+          drawInk(label, x + 4, y + 14, w - 9, foreground)
+        end, true)
+    end
+
+    -- Match the move selector's attached PP card with a neutral prompt card.
+    -- The HP/name HUD remains renderer-owned; this is only the command prompt
+    -- that used to live inside the old Game Boy menu box.
+    local x, w = promptX, promptW
+    drawButton(game, "NORMAL", x, 2, w, 74, false, false,
+      function(foreground)
+        drawInk("WHAT WILL", x + 6, 14, w - 12, foreground)
+        local name = battle.player and battle.player.name or ""
+        drawInk(name, x + 6, 32, w - 12, foreground)
+        drawInk("DO", x + 6, 50, w - 12, foreground)
+      end, true)
+  end
+
+  local function drawDetachedMessagePanel(game, battle, layout)
+    drawButton(game, "NORMAL", 2, 2, layout.panelW - 4, 74,
+      false, false, function(foreground)
+        if battle.scrollPx and battle.scrollPx > 0 then
+          battle.scrollPx = battle.scrollPx - 2
+          if battle.scrollPx <= 0 then battle.scrollPx = nil end
+        end
+        local off = battle.scrollPx or 0
+        local ys = { 20, 44 }
+        for lineIndex, line in ipairs(battle.shown or {}) do
+          local y = (ys[lineIndex] or 44) + off
+          for i = 1, #line do
+            drawCodeInk(line[i], 10 + (i - 1) * 8, y, foreground)
+          end
+        end
+        if (battle.msgWaiting or battle.msgPrompt)
+            and (battle.frame or 0) % 60 < 30 then
+          drawEffectArrow(layout.panelW - 12, 62, "down", foreground)
+        end
+      end, true)
+  end
+
+  -- Responsive Wide battle panel drawn after the completed world/UI composite.
   -- It never changes Renderer.uiSize or BattleState's drawing path, so staged
   -- 3D battles keep every pixel of their background. Its 80px-tall native
   -- control area scales by a height-safe integer and then expands its card
@@ -711,13 +738,16 @@ return function(mod)
   local function renderDetachedBattle(game, viewport)
     if not setting("battle_colors", true) then return end
     local battle = activeBattle(game)
-    if not battle or not detachedGrid(battle) then return end
+    if not battle or not widePresentationOwnsPhase(battle) then return end
     local phase = battle.phase
-    local moves = phase == "moveSelect"
-      and battle.player and battle.player.curMoves or battle.mimicMoves
-    local selected = phase == "moveSelect" and battle.moveIndex
-      or battle.mimicIndex
-    if type(moves) ~= "table" or #moves == 0 then return end
+    local moves, selected
+    if phase == "moveSelect" or phase == "mimicSelect" then
+      moves = phase == "moveSelect"
+        and battle.player and battle.player.curMoves or battle.mimicMoves
+      selected = phase == "moveSelect" and battle.moveIndex
+        or battle.mimicIndex
+      if type(moves) ~= "table" or #moves == 0 then return end
+    end
 
     local unitW = viewport and viewport.width
       or love.graphics.getWidth and love.graphics.getWidth() or 304
@@ -751,6 +781,16 @@ return function(mod)
     love.graphics.translate(layout.originX / dpiX, layout.originY / dpiY)
     love.graphics.scale(layout.scale / dpiX, layout.scale / dpiY)
 
+    if phase == "menu" then
+      drawDetachedCommandPanel(game, battle, layout)
+      love.graphics.pop()
+      return
+    elseif phase == "messages" then
+      drawDetachedMessagePanel(game, battle, layout)
+      love.graphics.pop()
+      return
+    end
+
     local twoRows = #moves > 2
     local buttonH = twoRows and 36 or 74
     local rowStep = twoRows and 38 or 0
@@ -779,20 +819,28 @@ return function(mod)
     local selectedMove = moves[selected]
     local def = selectedMove and moveDef(game, selectedMove)
     if def then
-      -- The focused details card carries PP only. Its colour already conveys
-      -- type, so repeating a type name here adds noise without information.
+      -- Keep move cards themselves name-only, but give the attached details
+      -- card the complete decision information: full type name (never the old
+      -- FGT/WTR abbreviations), power and PP. Status moves use --- for power,
+      -- matching the convention that they have no damage base power.
       local detailX, detailW = layout.detailX, layout.detailW
       local textX = detailX + 6
       drawButton(game, def.type, detailX, 2, detailW, 74, true, false,
         function(foreground)
+          drawInk(TypeChart.displayName(def.type), textX, 10,
+            detailW - 12, foreground)
+          local power = type(def.power) == "number" and def.power > 0
+            and tostring(math.floor(def.power)) or "---"
+          drawInk("POWER", textX, 31, 40, foreground)
+          drawInk(power, detailX + detailW - 30, 31, 24, foreground)
           if phase == "moveSelect" then
             local maxPP = (def.pp or 0)
               + (selectedMove.ppUps or 0) * math.floor((def.pp or 0) / 5)
-            drawInk("PP", textX, 34, 16, foreground)
+            drawInk("PP", textX, 52, 16, foreground)
             drawInk(("%2d/%2d"):format(selectedMove.pp or 0, maxPP),
-              textX + 23, 34, detailW - 33, foreground)
+              textX + 23, 52, detailW - 33, foreground)
           else
-            drawInk("COPY", textX, 34, detailW - 12, foreground)
+            drawInk("COPY", textX, 52, detailW - 12, foreground)
           end
         end, true)
     end

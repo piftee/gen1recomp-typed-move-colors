@@ -44,7 +44,13 @@ mod's own options page:
 
 Move Layout defaults to **Wide**. If Gen1Recomp is already using its wide
 battle renderer, the mod decorates that grid. Otherwise the mod adds a
-responsive move-only two-by-two panel after the battlefield has been drawn.
+responsive finished-frame battle presentation after the battlefield has been
+drawn. FIGHT/PKMN/ITEM/RUN, battle dialogue and the two-by-two move selector
+share the same chamfered card language, so choosing FIGHT no longer swaps from
+an old Game Boy box into the modern move grid. Pokémon names, levels and HP
+bars remain owned by the game or active battle renderer. The WHAT WILL prompt
+sits on the left of the four-command grid, following the engine's wide layout.
+
 The complete selector chooses a crisp integer scale from both the available
 width and height. On wide, short displays such as Android landscape screens,
 it stays within roughly the bottom third and makes the cards wider at the
@@ -61,9 +67,10 @@ keeps its full geometry at half scale. Per-axis DPI correction is applied when
 the window exposes a high-resolution framebuffer, so the same layout remains
 inside the faithful window without clipping or changing grid navigation.
 
-Move type names and three-letter abbreviations are never printed on the cards,
-summary rows or compatibility panels. The card colour is the type treatment;
-the focused details card shows PP only.
+Move cards, summary rows and compatibility rows stay uncluttered and never use
+three-letter type abbreviations such as `FGT` or `WTR`. The focused battle
+details card shows the selected move's full type name, base Power and PP;
+status moves show `---` for Power.
 
 On tall mobile displays, the responsive selector follows the same native battle
 row as the original move menu, directly beneath the player's HUD. It also reads
@@ -120,10 +127,13 @@ effects, PP, damage, targeting or battle input. Mods that add or alter moves are
 resolved at draw time. Unknown custom types fall back to a neutral palette.
 
 The Wide setting never enables or replaces Gen1Recomp's battlefield renderer.
-Over an `OG` or custom-rendered battle, it removes only the old move-menu pixels
-from the transparent UI layer and draws its grid after the final battlefield
-composition. Directional input is mapped to the same two-by-two arrangement;
-native PP validation and move execution remain unchanged.
+Over an `OG` or custom-rendered battle, it stops the native command, dialogue,
+move-list and TYPE/PP boxes before they touch the transparent UI layer, then
+draws the matching cards after the final battlefield composition. This avoids
+transparent WORLD holes and retained white rectangles instead of erasing a
+box after it was rendered. Directional input is mapped to the same two-by-two
+arrangement; native commands, PP validation and move execution remain
+unchanged. GAME mode retains the engine's complete native presentation.
 
 [Useful Move Info](https://github.com/ShaneMcGovernIE/useful-move-info) is an
 optional companion. Its Start/Q information box remains above the responsive
@@ -139,10 +149,11 @@ its fonts, spacing, PP readouts and battle controls.
 
 [Battle Art](https://github.com/absol89/DramaticShapeVoxelMod) v1.8.3 is
 supported through its public battle-presentation contract. While the coloured
-selector is open, Battle Art omits its old move text and TYPE/PP backing panel;
-Typed Move Colors does not erase the transparent arena canvas or redraw the
-Pokémon layer. This keeps Battle Art's staged scene and Crystal Animated sprites
-intact while its names, levels and HP bars remain Battle Art-owned.
+Wide presentation is active, Battle Art omits the corresponding native text
+and backing panels; Typed Move Colors does not erase the transparent arena
+canvas or redraw the Pokémon layer. This keeps Battle Art's staged scene and
+Crystal Animated sprites intact while its names, levels and HP bars remain
+Battle Art-owned.
 
 When **Move Effect** is on, each responsive battle button gets a small geometric
 indicator in its bottom-right corner: `↑↑` for super-effective, `↑` for
