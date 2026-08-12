@@ -55,10 +55,21 @@ and battle HUD remain owned by the game or another renderer such as a staged
 voxel battle. **Game** restores the engine's original compact move list whenever
 its own Battle Layout setting is `OG`.
 
+At very small faithful resolutions—including a Retina 1x window whose 320
+physical pixels are only 160 LOVE layout units—the normal two-by-two selector
+keeps its full geometry at half scale. Per-axis DPI correction is applied when
+the window exposes a high-resolution framebuffer, so the same layout remains
+inside the faithful window without clipping or changing grid navigation.
+
+Move type names and three-letter abbreviations are never printed on the cards,
+summary rows or compatibility panels. The card colour is the type treatment;
+the focused details card shows PP only.
+
 On tall mobile displays, the responsive selector follows the same native battle
-row as the original move menu, directly beneath the player's HUD. Bottom docking
-is used only when it is already closer, preventing a large gap or overlap with
-the on-screen controls.
+row as the original move menu, directly beneath the player's HUD. It also reads
+the live customized touch-control layout and stays above the upper edge of the
+D-pad/A/B cluster. That control edge becomes the fallback when a custom battle
+renderer cannot provide the normal menu-row anchor.
 
 Bold mirrors Modern Party UI: unselected buttons use the strong type shade,
 while the selected button becomes bright with dark text. Soft keeps every face
@@ -122,9 +133,16 @@ and NEW MOVE rows while retaining the mod's inspection shortcut and behavior.
 [Gen 3 Inspired UI Overhaul](https://github.com/HighDrexler/Gen-3-inspired-UI-overhaul-for-Gen1Recomp-V1.1-w-updater)
 v1.3.2 is also supported. When its revamped battle UI is enabled, Typed Move
 Colors leaves that mod's full-resolution move panel in place and applies the
-selected type palette to its four rounded move rows and TYPE/PP details strip.
+selected type palette to its four rounded move rows and PP details strip.
 The duplicate responsive selector is suppressed, while the overhaul retains
 its fonts, spacing, PP readouts and battle controls.
+
+[Battle Art](https://github.com/absol89/DramaticShapeVoxelMod) v1.8.3 is
+supported through its public battle-presentation contract. While the coloured
+selector is open, Battle Art omits its old move text and TYPE/PP backing panel;
+Typed Move Colors does not erase the transparent arena canvas or redraw the
+Pokémon layer. This keeps Battle Art's staged scene and Crystal Animated sprites
+intact while its names, levels and HP bars remain Battle Art-owned.
 
 When **Move Effect** is on, each responsive battle button gets a small geometric
 indicator in its bottom-right corner: `↑↑` for super-effective, `↑` for

@@ -6,6 +6,7 @@ return function(mod)
   local PaletteFX = require("src.render.PaletteFX")
   local SafeArea = require("src.core.SafeArea")
   local SummaryMenu = require("src.ui.SummaryMenu")
+  local TouchControls = require("src.core.TouchControls")
   local TypeChart = require("src.battle.TypeChart")
   local WideBattle = require("src.battle.WideBattle")
 
@@ -71,14 +72,6 @@ return function(mod)
     DRAGON = "PURPLEMON",
   }
 
-  local TYPE_SHORT = {
-    NORMAL = "NRM", FIGHTING = "FGT", FLYING = "FLY",
-    POISON = "PSN", GROUND = "GRD", ROCK = "RCK", BUG = "BUG",
-    GHOST = "GHO", FIRE = "FIR", WATER = "WTR", GRASS = "GRS",
-    ELECTRIC = "ELC", PSYCHIC_TYPE = "PSY", ICE = "ICE",
-    DRAGON = "DRG",
-  }
-
   local function setting(key, fallback)
     local ok, value = pcall(mod.options.get, mod.options, key)
     if not ok or value == nil then return fallback end
@@ -94,10 +87,59 @@ return function(mod)
     return not (options and options.revampedBattleUI == false)
   end
 
+  local function battleArtPresentation()
+    local ok, handle = pcall(mod.find, "BATTLE_ART_VOXEL_FORK")
+    local presentation = ok and handle and handle.exports
+      and handle.exports.battlePresentation
+    if type(presentation) ~= "table"
+        or tonumber(presentation.apiVersion or 0) < 1
+        or type(presentation.suppressHook) ~= "string" then
+      return nil
+    end
+    return presentation
+  end
+
+  local function battleArtOwnsBattle(battle)
+    return battleArtPresentation() ~= nil and battle ~= nil
+      and (rawget(battle, "dramaticShapeShot") ~= nil
+        or battle.letterboxWhite == false)
+  end
+
   local function engineWide(battle)
     if not (battle and battle.wideLayout) then return false end
     local ok, wide = pcall(battle.wideLayout, battle)
     return ok and wide and true or false
+  end
+
+  local function windowPixelRatio()
+    local unitW, unitH = love.graphics.getDimensions()
+    local pixelW, pixelH = unitW, unitH
+    if love.graphics.getPixelDimensions then
+      pixelW, pixelH = love.graphics.getPixelDimensions()
+    end
+    local dpiX = unitW > 0 and pixelW / unitW or 1
+    local dpiY = unitH > 0 and pixelH / unitH or 1
+    if dpiX <= 0 then dpiX = 1 end
+    if dpiY <= 0 then dpiY = 1 end
+    return dpiX, dpiY
+  end
+
+  -- The detached selector is authored in framebuffer pixels. Retina 1x is
+  -- 160x144 LOVE units but 320x288 physical pixels, which is enough for the
+  -- normal 304px panel once its final transform accounts for DPI.
+  local function detachedSurfaceFits(screenW, screenH, dpiX, dpiY)
+    if screenW == nil or screenH == nil then
+      local ok, _, _, safeW, safeH = pcall(SafeArea.rect)
+      if ok then screenW, screenH = safeW, safeH end
+    end
+    if dpiX == nil or dpiY == nil then
+      dpiX, dpiY = windowPixelRatio()
+    end
+    screenW = tonumber(screenW) or 0
+    screenH = tonumber(screenH) or 0
+    dpiX = tonumber(dpiX) or 1
+    dpiY = tonumber(dpiY) or 1
+    return screenW * dpiX >= 152 and screenH * dpiY >= 44
   end
 
   -- WIDE now owns only the move selector. If the engine itself is already
@@ -109,6 +151,7 @@ return function(mod)
     return setting("layout", "wide") == "wide"
       and not engineWide(battle)
       and not gen3BattleUIActive(battle and battle.game)
+      and detachedSurfaceFits()
   end
 
   -- The classic controller treats moves as a vertical list. When the
@@ -141,16 +184,60 @@ return function(mod)
       if direction and self.phase == phase and indexKey then
         self[indexKey] = inputPatch.navigate(before, #moves, direction)
       end
+      if inputPatch.trackPresentationBattle then
+        inputPatch.trackPresentationBattle(self)
+      end
       return result
     end
   end
   inputPatch.detached = detachedGrid
   inputPatch.navigate = WideBattle.moveGridIndex
   inputPatch.gen3BattleUIActive = gen3BattleUIActive
+  inputPatch.detachedSurfaceFits = detachedSurfaceFits
 
   local function isTop(screen)
     local stack = screen and screen.game and screen.game.stack
     return not (stack and stack.top) or stack:top() == screen
+  end
+
+  local function battleArtDetachedPresenter(battle)
+    if not setting("battle_colors", true) or not isTop(battle) then
+      return false
+    end
+    local phase = battle and battle.phase
+    return (phase == "moveSelect" or phase == "mimicSelect")
+      and detachedGrid(battle)
+  end
+
+  inputPatch.trackPresentationBattle = function(battle)
+    if battleArtDetachedPresenter(battle) then
+      inputPatch.presentationBattle = battle
+    elseif inputPatch.presentationBattle == battle then
+      inputPatch.presentationBattle = nil
+    end
+  end
+
+  -- Battle Art 1.8.3 publishes a presentation contract for replacement UIs.
+  -- Claim its native menu text and backing panels only while this detached
+  -- selector is actually visible. This prevents Battle Art from baking the
+  -- old TYPE/PP rectangle into its world canvas, and avoids touching the
+  -- transparent 160x144 canvas that Crystal Animated's sprites compose with.
+  local battleArt = battleArtPresentation()
+  if battleArt then
+    mod.hooks:wrap(battleArt.suppressHook, function(next, request)
+      local claimed = next(request)
+      if claimed == true or type(request) ~= "table"
+          or request.sourceModId ~= battleArt.sourceModId then
+        return claimed
+      end
+      local battle = request.battle or inputPatch.presentationBattle
+      if not battleArtDetachedPresenter(battle) then return claimed end
+      if request.surface == battleArt.surfaces.text
+          or request.surface == battleArt.surfaces.panels then
+        return true
+      end
+      return claimed
+    end, 9000)
   end
 
   local function moveDef(game, move)
@@ -423,8 +510,6 @@ return function(mod)
     if not detached then PaletteFX.markTrueColor(x, y, w, h) end
   end
 
-  local typeShort
-
   local function renderBattle(battle)
     if not setting("battle_colors", true) then return end
     if gen3BattleUIActive(battle and battle.game) then return end
@@ -437,6 +522,11 @@ return function(mod)
     if type(moves) ~= "table" then return end
 
     if detachedGrid(battle) then
+      -- Battle Art has already yielded its native text/panel surfaces through
+      -- battle.presentation.suppress_native.v1. Its arena and animated
+      -- Pokemon are renderer-owned, so no canvas erasure or sprite redraw is
+      -- necessary (and either would corrupt that finished composition).
+      if battleArtOwnsBattle(battle) then return end
       -- TYPE/PP occupies (0,64)-(88,104), while the move list occupies the
       -- bottom 160x48 box. Remove only those native menu pixels: the player's
       -- status block to their right and every battlefield pixel stay owned by
@@ -466,7 +556,7 @@ return function(mod)
     for i, move in ipairs(moves) do
       local def = moveDef(battle.game, move)
       if def then
-        local x, y, w, h, textX, textY, dense, typeX
+        local x, y, w, h, textX, textY, dense
         if wide then
           local col = (i - 1) % 2
           local row = math.floor((i - 1) / 2)
@@ -477,19 +567,23 @@ return function(mod)
           x, y, w, h = 4,
             (phase == "moveSelect" and 104 or 64) + (i - 1) * 10,
             152, 9
-          textX, textY, dense, typeX = 12, y + 1, true, 128
+          textX, textY, dense = 12, y + 1, true
         end
         drawButton(battle.game, def.type, x, y, w, h,
           i == selected, dense,
           function(foreground)
             drawInk(def.name or move.id, textX, textY,
-              typeX and typeX - textX - 4
-                or w - (textX - x) - 5, foreground)
-            if typeX then
-              drawInk(typeShort(def.type), typeX, textY, 24, foreground)
-            end
+              w - (textX - x) - 5, foreground)
           end)
       end
+    end
+
+    if not wide and phase == "moveSelect"
+        and battle.player and battle.player.disabledSlot ~= selected then
+      -- Preserve the native PP row and box, but remove its repeated TYPE/
+      -- lines. The card colour already communicates type, and abbreviations
+      -- such as FGT are both redundant and awkward.
+      clearRegion(battle.game, 8, 72, 72, 16)
     end
   end
 
@@ -499,12 +593,6 @@ return function(mod)
     next(battle)
     renderBattle(battle)
   end, -100)
-
-  typeShort = function(moveType)
-    if TYPE_SHORT[moveType] then return TYPE_SHORT[moveType] end
-    local shown = TypeChart.displayName(moveType) or moveType or "???"
-    return fitText(tostring(shown):upper(), 24)
-  end
 
   local function activeBattle(game)
     local stack = game and game.stack
@@ -516,11 +604,12 @@ return function(mod)
 
   -- Builds the detached selector in screen-space units. Width chooses the
   -- preferred integer scale, but height caps the panel at roughly the bottom
-  -- third of the usable display. When a wide, short phone hits that cap, the
-  -- native card widths expand instead of stretching pixels or wasting the
-  -- remaining horizontal room.
+  -- third of the usable display. Faithful 1x alone uses the same geometry at
+  -- half scale so presentation and grid input do not change. When a wide,
+  -- short phone hits the height cap, the native card widths expand instead
+  -- of stretching pixels or wasting the remaining horizontal room.
   local function detachedLayout(screenW, screenH,
-      safeX, safeY, safeW, safeH, nativeMoveY)
+      safeX, safeY, safeW, safeH, nativeMoveY, controlsTopY)
     screenW = math.max(1, math.floor(tonumber(screenW) or 304))
     screenH = math.max(1, math.floor(tonumber(screenH) or 144))
     safeX = math.max(0, math.floor(tonumber(safeX) or 0))
@@ -531,8 +620,19 @@ return function(mod)
     local panelH = 80
     local widthScale = math.floor((safeW - 16) / 304)
     local heightScale = math.floor((safeH * 0.34) / panelH)
-    local scale = math.max(1, math.min(6, widthScale, heightScale))
-    local margin = math.max(8, scale * 2)
+    local scale
+    if widthScale >= 1 and heightScale >= 1 then
+      scale = math.min(6, widthScale, heightScale)
+    else
+      -- Faithful 1x has only 160 drawable units. Retain the normal 304px
+      -- two-by-two geometry at half scale instead of changing presentation
+      -- or navigation. Larger surfaces remain integer-scaled pixel art.
+      local widthFit = (safeW - 8) / 304
+      local heightFit = (safeH * 0.34) / panelH
+      scale = math.max(0.5, math.min(1, widthFit, heightFit))
+    end
+    local margin = scale < 1 and math.max(2, math.floor(8 * scale + 0.5))
+      or math.max(8, scale * 2)
     local panelW = math.max(240,
       math.floor((safeW - margin * 2) / scale))
 
@@ -559,6 +659,14 @@ return function(mod)
       originY = math.min(bottomY, math.floor(nativeMoveY))
       originY = math.max(safeY, originY)
     end
+    if tonumber(controlsTopY) then
+      -- TouchControls is drawn after render.hud, so the move selector must
+      -- reserve its visible top edge now. This uses the player's live custom
+      -- portrait layout rather than guessing at a device-specific footer.
+      local aboveControls = math.floor(controlsTopY
+        - panelH * scale - margin)
+      originY = math.max(safeY, math.min(originY, aboveControls))
+    end
 
     return {
       scale = scale, margin = margin,
@@ -571,6 +679,27 @@ return function(mod)
     }
   end
   inputPatch.detachedLayout = detachedLayout
+
+  local function portraitControlsTop(safeW, safeH, dpiY)
+    if safeH <= safeW then return nil end
+    local okVisible, visible = pcall(TouchControls.visible, TouchControls)
+    if not okVisible or not visible then return nil end
+    local okLayout, controls = pcall(TouchControls.layout, TouchControls)
+    if not okLayout or type(controls) ~= "table" then return nil end
+    local top
+    for _, name in ipairs({ "dpad", "a", "b", "start", "select" }) do
+      local zone = controls[name]
+      if type(zone) == "table" and tonumber(zone.cy)
+          and tonumber(zone.w) then
+        -- drawIcon's backing disc has radius 0.58w and is the uppermost
+        -- visible part of each control.
+        local y = (zone.cy - zone.w * 0.58) * dpiY
+        top = not top and y or math.min(top, y)
+      end
+    end
+    return top
+  end
+  inputPatch.portraitControlsTop = portraitControlsTop
 
   -- Responsive move-only panel drawn after the completed world/UI composite.
   -- It never changes Renderer.uiSize or BattleState's drawing path, so staged
@@ -590,28 +719,37 @@ return function(mod)
       or battle.mimicIndex
     if type(moves) ~= "table" or #moves == 0 then return end
 
-    local screenW = viewport and viewport.width
+    local unitW = viewport and viewport.width
       or love.graphics.getWidth and love.graphics.getWidth() or 304
-    local screenH = viewport and viewport.height
+    local unitH = viewport and viewport.height
       or love.graphics.getHeight and love.graphics.getHeight() or 144
+    local dpiX = viewport and tonumber(viewport.dpiX)
+    local dpiY = viewport and tonumber(viewport.dpiY)
+    if not dpiX or not dpiY then dpiX, dpiY = windowPixelRatio() end
+    if dpiX <= 0 then dpiX = 1 end
+    if dpiY <= 0 then dpiY = 1 end
+    local screenW, screenH = unitW * dpiX, unitH * dpiY
     local safeX, safeY, safeW, safeH = 0, 0, screenW, screenH
     local actualW, actualH = love.graphics.getDimensions()
     -- Synthetic/headless viewports deliberately differ from the graphics
     -- stub. In the real renderer they match, so only then consult the device
     -- safe area for Android navigation bars, cutouts and iOS home indicators.
-    if math.abs(actualW - screenW) < 1 and math.abs(actualH - screenH) < 1 then
-      safeX, safeY, safeW, safeH = SafeArea.rect()
+    if math.abs(actualW - unitW) < 1 and math.abs(actualH - unitH) < 1 then
+      local unitX, unitY, safeUnitW, safeUnitH = SafeArea.rect()
+      safeX, safeY = unitX * dpiX, unitY * dpiY
+      safeW, safeH = safeUnitW * dpiX, safeUnitH * dpiY
     end
     local nativeMoveY
     if viewport and tonumber(viewport.gameY) and tonumber(viewport.scale) then
-      nativeMoveY = viewport.gameY + 104 * viewport.scale
+      nativeMoveY = viewport.gameY * dpiY + 104 * viewport.scale
     end
+    local controlsTopY = portraitControlsTop(safeW, safeH, dpiY)
     local layout = detachedLayout(screenW, screenH,
-      safeX, safeY, safeW, safeH, nativeMoveY)
+      safeX, safeY, safeW, safeH, nativeMoveY, controlsTopY)
 
     love.graphics.push("all")
-    love.graphics.translate(layout.originX, layout.originY)
-    love.graphics.scale(layout.scale, layout.scale)
+    love.graphics.translate(layout.originX / dpiX, layout.originY / dpiY)
+    love.graphics.scale(layout.scale / dpiX, layout.scale / dpiY)
 
     local twoRows = #moves > 2
     local buttonH = twoRows and 36 or 74
@@ -641,9 +779,8 @@ return function(mod)
     local selectedMove = moves[selected]
     local def = selectedMove and moveDef(game, selectedMove)
     if def then
-      -- The details card shares the focused type and black selected rim, so
-      -- PP is visually attached to the selected move without touching the
-      -- staged renderer's own HUDs.
+      -- The focused details card carries PP only. Its colour already conveys
+      -- type, so repeating a type name here adds noise without information.
       local detailX, detailW = layout.detailX, layout.detailW
       local textX = detailX + 6
       drawButton(game, def.type, detailX, 2, detailW, 74, true, false,
@@ -651,15 +788,12 @@ return function(mod)
           if phase == "moveSelect" then
             local maxPP = (def.pp or 0)
               + (selectedMove.ppUps or 0) * math.floor((def.pp or 0) / 5)
-            drawInk("PP", textX, 21, 16, foreground)
+            drawInk("PP", textX, 34, 16, foreground)
             drawInk(("%2d/%2d"):format(selectedMove.pp or 0, maxPP),
-              textX + 23, 21, detailW - 33, foreground)
+              textX + 23, 34, detailW - 33, foreground)
           else
-            drawInk("COPY", textX, 21, detailW - 12, foreground)
+            drawInk("COPY", textX, 34, detailW - 12, foreground)
           end
-          local shown = TypeChart.displayName(def.type) or def.type or "???"
-          drawInk(tostring(shown):upper(), textX, 51,
-            detailW - 12, foreground)
         end, true)
     end
 
@@ -730,6 +864,7 @@ return function(mod)
     local bold = setting("strength", "bold") == "bold"
     local selected = battle.moveIndex
     local selectedRect
+    local infoTypeMask
 
     love.graphics.push("all")
     local blendOK = pcall(love.graphics.setBlendMode,
@@ -766,6 +901,27 @@ return function(mod)
       love.graphics.setColor(rgb(face))
       love.graphics.rectangle("fill", rect.x + pad, infoY,
         rowW, infoH, 9 * unit, 9 * unit)
+      local faceR, faceG, faceB = rgb(face)
+      local maskX = rect.x + pad + 8 * unit
+      local ppLeft = rect.x + rect.w - pad - 190 * unit
+      infoTypeMask = {
+        x = maskX,
+        y = infoY + 4 * unit,
+        w = math.max(0, ppLeft - maskX - 6 * unit),
+        h = infoH - 8 * unit,
+        color = { faceR * 0.90, faceG * 0.91, faceB * 0.89 },
+      }
+    end
+
+    if infoTypeMask and infoTypeMask.w > 0 then
+      -- Gen 3 UI prints TYPE + name on the left and PP on the right. Cover
+      -- only the repeated type text with the exact multiplied interior fill;
+      -- the companion's PP typography and rounded border stay untouched.
+      love.graphics.setBlendMode("alpha")
+      love.graphics.setColor(infoTypeMask.color[1], infoTypeMask.color[2],
+        infoTypeMask.color[3], 1)
+      love.graphics.rectangle("fill", infoTypeMask.x, infoTypeMask.y,
+        infoTypeMask.w, infoTypeMask.h)
     end
 
     if selectedRect then
@@ -800,7 +956,6 @@ return function(mod)
         drawButton(game, def.type, 8, y, 144, 15, false, true,
           function(foreground)
             drawInk(def.name or move.id, 16, y, 104, foreground)
-            drawInk(typeShort(def.type), 126, y, 24, foreground)
             drawInk("PP", 88, y + 7, 16, foreground)
             local maxPP = (def.pp or 0)
               + (move.ppUps or 0) * math.floor((def.pp or 0) / 5)
