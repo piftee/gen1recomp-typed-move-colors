@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.6 - 2026-08-12
+
+- Stopped native command, dialogue, move-list and TYPE/PP boxes before they draw whenever the mod's Wide presentation owns the phase; this removes retained white slabs, WORLD-shaped holes and old GUI beneath the finished-frame cards.
+- Added matching finished-frame FIGHT/PKMN/ITEM/RUN cards and a neutral prompt card in Wide mode while retaining the game or custom renderer's names, levels and HP HUD.
+- Added a matching Wide battle-dialogue card so normal battles no longer jump between classic Game Boy boxes and the modern selector.
+- Kept native Wide suppression active underneath closing overlays and fades, preventing a final one-frame flash of the old interface as a battle disappears.
+- Placed the WHAT WILL prompt card on the left and the four command cards on the right, matching the established wide-battle reading order.
+- Expanded the selected-move details card with the full type name, Power and PP; status moves show `---` for Power and three-letter type abbreviations are never used.
+- Kept GAME mode, Safari battles, the scripted catching demo and genuinely sub-minimum fallback surfaces on their original native presentation.
+
 ## 0.3.5 - 2026-08-12
 
 - Kept the normal detached two-by-two selector at Faithful 1x by fitting its full geometry at half scale, with per-axis DPI correction where the window exposes a high-resolution framebuffer.
