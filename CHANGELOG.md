@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.7 - 2026-08-13
+
+- Constrained the finished-frame controls to the presented 160x144 battle rectangle in flat/OG battles, including WORLD backgrounds, portrait Auto Fill and horizontal letterboxing.
+- Lifted flat-battle controls from row 13 to row 12 so their top edge meets the Pokémon composition without an empty strip.
+- Scaled short card labels to the native Pokémon-name size and wrapped long translated move names over two lines when that materially improves readability.
+- Added a 100%/85%/70%/55% Card Opacity setting for detached battle cards, allowing voxel and WORLD scenes to remain visible beneath the type treatment while text stays fully opaque.
+- Retained the existing full-window Wide treatment for Battle Art and other staged/custom battle surfaces.
+
 ## 0.3.6 - 2026-08-12
 
 - Stopped native command, dialogue, move-list and TYPE/PP boxes before they draw whenever the mod's Wide presentation owns the phase; this removes retained white slabs, WORLD-shaped holes and old GUI beneath the finished-frame cards.

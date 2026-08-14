@@ -43,6 +43,18 @@ return function(game)
     end
   end
 
+  local function cardOpacity(value)
+    game.save.options.modOptions = game.save.options.modOptions or {}
+    game.save.options.modOptions.typed_move_colors =
+      game.save.options.modOptions.typed_move_colors or {}
+    game.save.options.modOptions.typed_move_colors.opacity = value
+    if game.mods and game.mods.modOptions then
+      game.mods.modOptions.typed_move_colors =
+        game.mods.modOptions.typed_move_colors or {}
+      game.mods.modOptions.typed_move_colors.opacity = value
+    end
+  end
+
   local mon = Pokemon.new(game.data, "CHARIZARD", 50)
   local allMoves = {
     { id = "FLAMETHROWER", pp = game.data.moves.FLAMETHROWER.pp },
@@ -83,6 +95,12 @@ return function(game)
   U.wait(8)
   U.log("PASS standard renderer restores the complete player sprite")
   U.shot(game, DIR .. "/typed_move_battle_standard.png")
+
+  cardOpacity("70")
+  U.wait(3)
+  U.log("PASS 70% battle-card opacity preserves the scene underneath")
+  U.shot(game, DIR .. "/typed_move_battle_opacity_70.png")
+  cardOpacity("100")
 
   battle.phase = "menu"
   battle.menuIndex = 1

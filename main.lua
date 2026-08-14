@@ -17,6 +17,11 @@ return function(mod)
       default = "bold", choices = {
         { "SOFT", "soft" }, { "BOLD", "bold" },
       } },
+    { key = "opacity", label = "BATTLE OPACITY", type = "choice",
+      default = "100", choices = {
+        { "100%", "100" }, { "85%", "85" },
+        { "70%", "70" }, { "55%", "55" },
+      } },
   }
   mod.options:define(optionSchema)
 
@@ -26,6 +31,7 @@ return function(mod)
     effect_hints = "MOVE EFFECT",
     menu_colors = "MOVE MENUS",
     strength = "MOVE TINT",
+    opacity = "CARD OPACITY",
   }
 
   local function setOption(game, key, value)

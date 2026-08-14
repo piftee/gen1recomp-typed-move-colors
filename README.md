@@ -41,6 +41,7 @@ mod's own options page:
 | Move Effect | On or off |
 | Move Menus | On or off |
 | Move Tint | Bold or soft |
+| Card Opacity | 100%, 85%, 70% or 55% |
 
 Move Layout defaults to **Wide**. If Gen1Recomp is already using its wide
 battle renderer, the mod decorates that grid. Otherwise the mod adds a
@@ -55,11 +56,14 @@ The complete selector chooses a crisp integer scale from both the available
 width and height. On wide, short displays such as Android landscape screens,
 it stays within roughly the bottom third and makes the cards wider at the
 smaller scale, so it still uses the available width without becoming too tall.
-Device safe areas are respected. Pokémon with one or two moves use full-height
-buttons; three or four moves use the two-by-two grid. The background, sprites
-and battle HUD remain owned by the game or another renderer such as a staged
-voxel battle. **Game** restores the engine's original compact move list whenever
-its own Battle Layout setting is `OG`.
+Device safe areas are respected. In flat/OG battles—including WORLD
+backgrounds—the cards stay inside the exact presented 160x144 battle rectangle
+and meet the lower edge of the Pokémon composition. Staged renderers such as
+Battle Art retain the wider window-space presentation that follows their own
+canvas. Pokémon with one or two moves use full-height buttons; three or four
+moves use the two-by-two grid. The background, sprites and battle HUD remain
+owned by the game or active renderer. **Game** restores the engine's original
+compact move list whenever its own Battle Layout setting is `OG`.
 
 At very small faithful resolutions—including a Retina 1x window whose 320
 physical pixels are only 160 LOVE layout units—the normal two-by-two selector
@@ -72,8 +76,18 @@ three-letter type abbreviations such as `FGT` or `WTR`. The focused battle
 details card shows the selected move's full type name, base Power and PP;
 status moves show `---` for Power.
 
-On tall mobile displays, the responsive selector follows the same native battle
-row as the original move menu, directly beneath the player's HUD. It also reads
+Detached card lettering targets the same final pixel size as the native
+Pokémon names. Short labels reach that size directly; long translated move
+names wrap across two lines or scale down only as far as the available card
+width requires.
+
+Card Opacity controls the detached battle cards without fading their text.
+The default 100% retains the solid type treatment; 85%, 70% and 55% let WORLD,
+voxel and other staged battle scenery show through the faces and frames. It
+does not alter summary screens, move-learning menus or Gen 3 UI-owned panels.
+
+On tall mobile displays, the responsive selector follows the lower edge of the
+Pokémon composition, directly beneath the player's HUD. It also reads
 the live customized touch-control layout and stays above the upper edge of the
 D-pad/A/B cluster. That control edge becomes the fallback when a custom battle
 renderer cannot provide the normal menu-row anchor.

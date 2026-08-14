@@ -11,6 +11,8 @@ return {
     added = {
       "Chamfered move buttons using an exact reference-derived type palette",
       "A width-, height- and DPI-responsive two-by-two grid with full type, Power and PP details and a Game-controlled fallback",
+      "OG battle-area bounds and native-scale card lettering with translation-aware wrapping",
+      "Adjustable detached-card opacity for voxel, WORLD and other staged battle scenes",
       "Matching Wide command and battle-dialogue cards without replacing native battle behavior",
       "Useful Move Info compatibility for battle text and move-learning rows",
       "Gen 3 Inspired UI Overhaul compatibility for its move rows and PP strip",
