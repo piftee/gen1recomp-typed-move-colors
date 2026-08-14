@@ -6,5 +6,7 @@ tests/fixtures/gen3_battle_ui/main.lua
 tests/fixtures/gen3_battle_ui/manifest.json
 tests/fixtures/battle_art_voxel_fork/main.lua
 tests/fixtures/battle_art_voxel_fork/manifest.json
+tests/fixtures/potato_voxel/main.lua
+tests/fixtures/potato_voxel/manifest.json
 .gitignore
 .github/

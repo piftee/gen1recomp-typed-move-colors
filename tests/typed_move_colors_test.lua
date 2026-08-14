@@ -8,6 +8,7 @@ local ListMenu = require("src.ui.ListMenu")
 local MoveLearnMenu = require("src.ui.MoveLearnMenu")
 local PaletteFX = require("src.render.PaletteFX")
 local Runtime = require("src.mods.Runtime")
+local Strings = require("src.core.Strings")
 local SummaryMenu = require("src.ui.SummaryMenu")
 local TypeChart = require("src.battle.TypeChart")
 
@@ -107,6 +108,16 @@ local layoutProbe = setmetatable({ game = { save = { options = {
 T.eq(BattleState.wideLayout(layoutProbe), false,
   "the mod does not alter the engine's battlefield renderer")
 local inputPatch = rawget(BattleState, "_typedMoveColorsInputPatch")
+local fixedDetailScale, stockTypeScale = inputPatch.detailInkScales(
+  "ELECTRIC", 90, 2.5)
+local sameFixedScale, longTypeScale = inputPatch.detailInkScales(
+  "EXTRA-LONG-TYPE", 90, 2.5)
+T.eq(fixedDetailScale, sameFixedScale,
+  "Power and PP use one stable nine-character reference scale")
+T.eq(stockTypeScale, fixedDetailScale,
+  "all stock eight-character type names use the same stable scale")
+T.check(longTypeScale < fixedDetailScale,
+  "only custom type names beyond nine characters shrink further")
 rows[7].step(game, -1)
 T.eq(rows[7].value(game), "55%",
   "card opacity can be reduced for voxel and world backgrounds")
@@ -593,6 +604,50 @@ local promptX = buttonLayers[13] and buttonLayers[13].points[1]
 T.check(promptX and fightX and promptX < fightX,
   "the WHAT WILL prompt card sits to the left of the action grid")
 
+-- Replacement labels must read the engine string catalog at draw time so a
+-- translation mod does not fall back to English inside Typed Move Colors.
+game.data.strings = game.data.strings or {}
+game.data.strings["battle|FIGHT"] = "LUTAR"
+game.data.strings.PKMN = "POKEMON"
+game.data.strings["battle|ITEM"] = "ITENS"
+game.data.strings["battle|RUN"] = "FUGIR"
+game.data.strings.POWER = "PODER"
+Strings.load(game.data)
+text = {}
+Runtime.call("render.hud", function() end, game, {
+  width = 1024, height = 768,
+  gameX = 112, gameY = 24, gameWidth = 800, gameHeight = 720,
+  scale = 5,
+})
+local translated, translatedValues = {}, {}
+for _, call in ipairs(text) do
+  translated[call.value] = true
+  translatedValues[#translatedValues + 1] = tostring(call.value)
+end
+T.check(translated.LUTAR and translated.POKEMON
+    and translated.ITENS and translated.FUGIR,
+  "Wide command labels use the active engine translation catalog ("
+    .. table.concat(translatedValues, ", ") .. ")")
+
+battle.phase = "moveSelect"
+text = {}
+Runtime.call("render.hud", function() end, game, {
+  width = 1024, height = 768,
+  gameX = 112, gameY = 24, gameWidth = 800, gameHeight = 720,
+  scale = 5,
+})
+translated = {}
+for _, call in ipairs(text) do translated[call.value] = true end
+T.eq(translated["PODER 40"], true,
+  "the details-card Power label uses the active translation catalog")
+battle.phase = "menu"
+game.data.strings["battle|FIGHT"] = nil
+game.data.strings.PKMN = nil
+game.data.strings["battle|ITEM"] = nil
+game.data.strings["battle|RUN"] = nil
+game.data.strings.POWER = nil
+Strings.load(game.data)
+
 -- A transition/modal may become topmost while the battle is still included
 -- in the visible stack for one closing draw. The native battle canvas must
 -- stay suppressed underneath it even though the modern controls are hidden.
@@ -720,14 +775,20 @@ T.eq(#marks, 4, "all four summary rows are tinted")
 T.eq(marks[1].x, 8, "summary chips stay inside the native move box")
 T.eq(marks[1].w, 144, "summary chips retain room for PP")
 local sawTypeLabel = false
+local sawCompleteTranslatedName = false
 for _, call in ipairs(text) do
   if call.value == "FIR" or call.value == "WTR"
       or call.value == "FGT" or call.value == "NRM" then
     sawTypeLabel = true
   end
+  if call.value == "SEMENTE SUGA-VIDA" then
+    sawCompleteTranslatedName = true
+  end
 end
 T.eq(sawTypeLabel, false,
   "summary rows never print redundant type abbreviations")
+T.eq(sawCompleteTranslatedName, true,
+  "summary rows preserve the complete translated move name")
 
 panels, buttonLayers, marks, text = {}, {}, {}, {}
 local learner = setmetatable({ game = game, selecting = true, index = 2,
@@ -1007,5 +1068,50 @@ gen3Combined.loader.modOptions.gen3_battle_ui = {
 T.eq(gen3Patch.detached(gen3Battle), true,
   "the responsive selector returns when the Gen 3 battle UI is disabled")
 gen3Combined.release()
+
+-- Potato Voxel renders glass panels from its exported textRects list before
+-- the native drawTextArea method runs. Typed Move Colors filters those text
+-- surfaces only while Wide owns the phase, retaining the original list for
+-- GAME mode and leaving Potato's separate Pokemon HUD surfaces untouched.
+local potatoData = T.fixtures.fresh()
+Font.load(potatoData)
+local potatoCombined = T.sdk.loadMods({
+  "mods/typed_move_colors/tests/fixtures/potato_voxel",
+  "mods/typed_move_colors",
+}, { data = potatoData, dev = true })
+T.eq(#potatoCombined.errors, 0,
+  "loads beside Potato Voxel without compatibility errors")
+T.eq(potatoCombined.loader.order[1], "potato_voxel",
+  "Potato Voxel loads before its Typed Move Colors adapter")
+
+local potatoBattle = {
+  phase = "moveSelect",
+  moveIndex = 1,
+  player = { curMoves = {} },
+  letterboxWhite = false,
+  wideLayout = function() return false end,
+}
+local potatoStack = {}
+function potatoStack:top() return potatoBattle end
+local potatoGame = {
+  data = potatoCombined.data,
+  save = { options = {} },
+  mods = potatoCombined.loader,
+  stack = potatoStack,
+}
+potatoBattle.game = potatoGame
+local potatoModule = potatoCombined.loader.exports.potato_voxel
+  .overworldBattle
+T.eq(rawget(BattleState, "_typedMoveColorsInputPatch")
+    .potatoTextRectsPatched, true,
+  "the Potato Voxel text-panel compatibility seam is installed")
+T.eq(next(potatoModule.textRects(potatoBattle)), nil,
+  "Wide suppresses Potato Voxel's obsolete white/glass move panel")
+
+potatoCombined.loader.modOptions.typed_move_colors = { layout = "game" }
+local nativePotatoRects = potatoModule.textRects(potatoBattle)
+T.check(nativePotatoRects.box ~= nil and nativePotatoRects.moves ~= nil,
+  "GAME mode restores Potato Voxel's original text panel rectangles")
+potatoCombined.release()
 
 T.finish("typed_move_colors")

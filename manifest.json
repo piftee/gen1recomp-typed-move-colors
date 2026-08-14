@@ -1,7 +1,7 @@
 {
   "id": "typed_move_colors",
   "name": "Typed Move Colors",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "github": "piftee/gen1recomp-typed-move-colors",
   "api": 2,
   "entry": "main.lua",
@@ -14,7 +14,8 @@
     "modern_party_ui",
     "useful_move_info",
     "gen3_battle_ui",
-    "BATTLE_ART_VOXEL_FORK"
+    "BATTLE_ART_VOXEL_FORK",
+    "potato_voxel"
   ],
   "conflicts": [],
   "incompatible": [],
