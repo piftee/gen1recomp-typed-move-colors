@@ -17,6 +17,8 @@ return {
       "Useful Move Info compatibility for battle text and move-learning rows",
       "Gen 3 Inspired UI Overhaul compatibility for its move rows and PP strip",
       "Battle Art compatibility through its native presentation contract, including Crystal Animated sprite-safe menu suppression",
+      "Potato Voxel compatibility that removes obsolete glass menu panels while retaining its world and Pokémon HUDs",
+      "Translation-aware command/detail labels and stable nine-character details-card typography",
       "Optional arrow and circle effectiveness indicators on responsive battle move buttons",
       "A dominant black selected frame with a raised focus state",
       "Battle, layout, effectiveness, menu and tint-strength settings in the main Options screen",

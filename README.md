@@ -169,6 +169,19 @@ canvas or redraw the Pokémon layer. This keeps Battle Art's staged scene and
 Crystal Animated sprites intact while its names, levels and HP bars remain
 Battle Art-owned.
 
+[Potato Voxel](https://github.com/ShaneMcGovernIE/potato_voxel) is supported
+through its exported OverworldBattle module. In Wide mode, Typed Move Colors
+suppresses Potato Voxel's obsolete command, dialogue and move-menu glass
+rectangles before they are composed, while leaving its world scene, Pokémon
+sprites, names, levels and HP bars under Potato Voxel's ownership. GAME mode
+keeps Potato Voxel's original interface unchanged.
+
+Replacement command and move-detail labels use Gen1Recomp's active string
+catalog. Power and PP retain one stable font size, stock type names use the
+same nine-character reference size, and only longer translated or custom type
+names shrink further. Long translated summary move names are scaled to keep
+their complete text instead of losing the final characters.
+
 When **Move Effect** is on, each responsive battle button gets a small geometric
 indicator in its bottom-right corner: `↑↑` for super-effective, `↑` for
 effective, `↓` for not very effective, and `○` for status moves or attacks that

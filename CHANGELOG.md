@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.8 - 2026-08-14
+
+- Preserved complete translated move names on summary rows by using the space freed when redundant type abbreviations were removed and scaling long labels instead of clipping their final characters.
+- Routed the replacement FIGHT, PKMN, ITEM, RUN, POWER, PP and COPY labels through the engine string catalog, including fit-safe translated command labels.
+- Stabilized Type, Power and PP typography against a nine-character reference so ordinary selection changes no longer make the details-card text jump in size; only longer custom type names shrink further.
+- Added Potato Voxel compatibility through its exported OverworldBattle seam, suppressing its obsolete white/glass command, dialogue and move panels while retaining the world scene and Pokémon HUDs.
+
 ## 0.3.7 - 2026-08-13
 
 - Constrained the finished-frame controls to the presented 160x144 battle rectangle in flat/OG battles, including WORLD backgrounds, portrait Auto Fill and horizontal letterboxing.

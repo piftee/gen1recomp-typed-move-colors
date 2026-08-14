@@ -5,6 +5,7 @@ return function(mod)
   local MoveLearnMenu = require("src.ui.MoveLearnMenu")
   local PaletteFX = require("src.render.PaletteFX")
   local SafeArea = require("src.core.SafeArea")
+  local Strings = require("src.core.Strings")
   local SummaryMenu = require("src.ui.SummaryMenu")
   local TouchControls = require("src.core.TouchControls")
   local TypeChart = require("src.battle.TypeChart")
@@ -97,6 +98,22 @@ return function(mod)
       return nil
     end
     return presentation
+  end
+
+  -- Potato Voxel predates Battle Art's public presentation contract, but it
+  -- exports its OverworldBattle module through the documented `lib.require`
+  -- seam. Its textRects list is the single source used for the frosted
+  -- command/dialogue/move panels, so filtering that list lets the finished-
+  -- frame Wide UI take ownership without disturbing Potato's world or HUDs.
+  local function potatoVoxelBattleModule()
+    local ok, handle = pcall(mod.find, "potato_voxel")
+    local lib = ok and handle and handle.exports and handle.exports.lib
+    if type(lib) ~= "table" or type(lib.require) ~= "function" then
+      return nil
+    end
+    local loaded, battleModule = pcall(lib.require, "OverworldBattle")
+    if loaded and type(battleModule) == "table" then return battleModule end
+    return nil
   end
 
   local function engineWide(battle)
@@ -253,6 +270,30 @@ return function(mod)
   textPatch.owns = widePresentationOwnsPhase
   inputPatch.widePresentationOwnsPhase = widePresentationOwnsPhase
 
+  -- Potato Voxel draws its translucent glass rectangles before
+  -- BattleState.drawTextArea. Suppressing drawTextArea alone therefore
+  -- leaves a white/frosted block behind. Filter only Potato's text-surface
+  -- rectangles while Wide owns the phase; enemy/player HUD rectangles stay
+  -- in its renderer and GAME mode receives the original list unchanged.
+  local potatoBattle = potatoVoxelBattleModule()
+  if potatoBattle and type(potatoBattle.textRects) == "function" then
+    local potatoPatch = rawget(potatoBattle,
+      "_typedMoveColorsTextRectsPatch")
+    if not potatoPatch then
+      potatoPatch = { original = potatoBattle.textRects }
+      rawset(potatoBattle, "_typedMoveColorsTextRectsPatch", potatoPatch)
+      potatoBattle.textRects = function(battle)
+        local rects = potatoPatch.original(battle)
+        if potatoPatch.owns and potatoPatch.owns(battle) then return {} end
+        return rects
+      end
+    end
+    potatoPatch.owns = widePresentationOwnsPhase
+    inputPatch.potatoTextRectsPatched = true
+  else
+    inputPatch.potatoTextRectsPatched = false
+  end
+
   local function moveDef(game, move)
     local id = type(move) == "table" and move.id or move
     local moves = game and game.data and game.data.moves
@@ -386,21 +427,75 @@ return function(mod)
     love.graphics.pop()
   end
 
+  -- Summary rows have a complete top line available now that redundant type
+  -- abbreviations are gone. Preserve every translated move-name glyph and
+  -- reduce only genuinely long labels instead of deleting their tail.
+  local function drawFittedInk(text, x, y, maxWidth, color)
+    text = tostring(text or "")
+    local width = Font.width(text)
+    local scale = width > 0 and math.min(1, maxWidth / width) or 1
+    if scale < 0.75 then
+      scale = 0.75
+      text = fitText(text, maxWidth / scale)
+    end
+    if scale == 1 then
+      drawInk(text, x, y, maxWidth, color)
+      return 1
+    end
+    love.graphics.push("all")
+    local shader = shaderForInk()
+    if shader then
+      love.graphics.setShader(shader)
+      love.graphics.setColor(rgb(color))
+    else
+      love.graphics.setColor(0, 0, 0, 1)
+    end
+    love.graphics.translate(math.floor(x), math.floor(y))
+    love.graphics.scale(scale, scale)
+    Font.draw(text, 0, 0)
+    love.graphics.pop()
+    return scale
+  end
+
   -- Detached cards may be deliberately smaller than the 160x144 battle
   -- surface they accompany. Grow their lettering back to the battle's own
   -- pixel scale, then reduce only long translated labels enough to fit. This
   -- keeps FIGHT and short move names at roughly the same visual size as the
   -- Pokemon names without clipping names such as SEMENTE SUGA-VIDA.
-  local function detachedInkScale(text, maxWidth, preferred)
-    preferred = math.max(1, tonumber(preferred) or 1)
+  local function detachedInkScale(text, maxWidth, preferred, minimum)
+    minimum = tonumber(minimum) or 1
+    preferred = math.max(minimum, tonumber(preferred) or minimum)
     local width = Font.width(tostring(text or ""))
     if width <= 0 then return preferred end
-    return math.max(1, math.min(preferred, maxWidth / width))
+    return math.max(minimum, math.min(preferred, maxWidth / width))
   end
 
-  local function drawDetachedInk(text, x, y, maxWidth, color, preferred)
-    local scale = detachedInkScale(text, maxWidth, preferred)
-    text = fitText(text, maxWidth / scale)
+  -- Size the details card against a nine-cell reference. All stock Gen 1
+  -- type names are eight cells or fewer, while POWER 999 and PP 99/99 fit in
+  -- nine, so selection changes no longer make those rows jump in size. Only
+  -- custom/translated type names beyond that reference shrink further.
+  local function detailInkScales(typeText, maxWidth, preferred)
+    local referenceWidth = Font.width(string.rep("M", 9))
+    local fixed = detachedInkScale(string.rep("M", 9), maxWidth, preferred)
+    local typeScale = fixed
+    local typeWidth = Font.width(tostring(typeText or ""))
+    if typeWidth > referenceWidth and typeWidth > 0 then
+      typeScale = math.max(0.75, math.min(fixed, maxWidth / typeWidth))
+    end
+    return fixed, typeScale
+  end
+  inputPatch.detailInkScales = detailInkScales
+
+  local function drawDetachedInk(text, x, y, maxWidth, color, preferred,
+      minimum)
+    local scale = detachedInkScale(text, maxWidth, preferred, minimum)
+    text = tostring(text or "")
+    -- A scale chosen as maxWidth / width already fits exactly; feeding that
+    -- quotient back through fitText's integer floor can lose one final glyph
+    -- to floating-point rounding (for example translated PKMN labels).
+    if Font.width(text) * scale > maxWidth + 0.001 then
+      text = fitText(text, maxWidth / scale)
+    end
     love.graphics.push("all")
     local shader = shaderForInk()
     if shader then
@@ -757,7 +852,10 @@ return function(mod)
   inputPatch.portraitControlsTop = portraitControlsTop
 
   local function drawDetachedCommandPanel(game, battle, layout)
-    local labels = { "FIGHT", "PKMN", "ITEM", "RUN" }
+    local labels = {
+      Strings("FIGHT", "battle"), Strings("PKMN"),
+      Strings("ITEM", "battle"), Strings("RUN", "battle"),
+    }
     local promptX, promptW = 2, layout.detailW
     local actionX = promptX + promptW + 4
     local actionRight = layout.panelW - 2
@@ -774,10 +872,10 @@ return function(mod)
       drawButton(game, "NORMAL", x, y, w, 36,
         battle.menuIndex == i, false, function(foreground)
           local textScale = detachedInkScale(label, w - 10,
-            layout.fontScale)
+            layout.fontScale, 0.75)
           drawDetachedInk(label, x + 5,
             y + math.floor((36 - 8 * textScale) / 2),
-            w - 10, foreground, textScale)
+            w - 10, foreground, textScale, 0.75)
         end, true)
     end
 
@@ -980,24 +1078,23 @@ return function(mod)
           local power = type(def.power) == "number" and def.power > 0
             and tostring(math.floor(def.power)) or "---"
           local typeText = TypeChart.displayName(def.type)
-          local powerText = "POWER " .. power
+          local powerText = Strings("POWER") .. " " .. power
           local ppText
           if phase == "moveSelect" then
             local maxPP = (def.pp or 0)
               + (selectedMove.ppUps or 0) * math.floor((def.pp or 0) / 5)
-            ppText = ("PP %d/%d"):format(selectedMove.pp or 0, maxPP)
+            ppText = (Strings("PP") .. " %d/%d")
+              :format(selectedMove.pp or 0, maxPP)
           else
-            ppText = "COPY"
+            ppText = Strings("COPY")
           end
           local available = detailW - 12
-          local scales = {
-            detachedInkScale(typeText, available, layout.fontScale),
-            detachedInkScale(powerText, available, layout.fontScale),
-            detachedInkScale(ppText, available, layout.fontScale),
-          }
+          local fixedScale, typeScale = detailInkScales(
+            typeText, available, layout.fontScale)
+          local scales = { typeScale, fixedScale, fixedScale }
           local ys = { 8, 31, 54 }
           drawDetachedInk(typeText, textX, ys[1], available,
-            foreground, scales[1])
+            foreground, scales[1], 0.75)
           drawDetachedInk(powerText, textX, ys[2], available,
             foreground, scales[2])
           drawDetachedInk(ppText, textX, ys[3], available,
@@ -1163,8 +1260,8 @@ return function(mod)
         local y = 72 + (i - 1) * 16
         drawButton(game, def.type, 8, y, 144, 15, false, true,
           function(foreground)
-            drawInk(def.name or move.id, 16, y, 104, foreground)
-            drawInk("PP", 88, y + 7, 16, foreground)
+            drawFittedInk(def.name or move.id, 12, y, 138, foreground)
+            drawInk(Strings("PP"), 88, y + 7, 16, foreground)
             local maxPP = (def.pp or 0)
               + (move.ppUps or 0) * math.floor((def.pp or 0) / 5)
             drawInk(("%2d/%2d"):format(move.pp or 0, maxPP),
