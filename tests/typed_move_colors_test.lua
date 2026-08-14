@@ -15,7 +15,9 @@ local data = T.fixtures.fresh()
 data.moves = {
   FIX_FIRE = { name = "EMBER", type = "FIRE", power = 40, pp = 25 },
   FIX_WATER = { name = "WATER GUN", type = "WATER", power = 40, pp = 25 },
-  FIX_GRASS = { name = "VINE WHIP", type = "GRASS", power = 40, pp = 10 },
+  FIX_GRASS = {
+    name = "SEMENTE SUGA-VIDA", type = "GRASS", power = 40, pp = 10,
+  },
   FIX_ELECTRIC = {
     name = "THUNDERBOLT", type = "ELECTRIC", power = 95, pp = 15,
   },
@@ -63,7 +65,7 @@ local run = T.sdk.loadMods({
 T.eq(#run.errors, 0, "loads clean (" .. tostring(run.errors[1]) .. ")")
 
 local schema = run.loader.optionSchemas.typed_move_colors or {}
-T.eq(#schema, 5, "all five presentation settings are registered")
+T.eq(#schema, 6, "all six presentation settings are registered")
 T.eq(schema[3].key, "effect_hints",
   "the mod settings page exposes the effectiveness toggle")
 T.eq(schema[3].label, "MOVE EFFECT",
@@ -81,7 +83,7 @@ local game = {
 
 local rows = Runtime.call("ui.options.rows",
   function(_, base) return base end, game, { { id = "text_speed" } })
-T.eq(#rows, 6, "the five settings appear in the main Options menu")
+T.eq(#rows, 7, "the six settings appear in the main Options menu")
 T.eq(rows[2].id, "typed_move_colors_battle_colors",
   "battle colours are the first companion setting")
 T.eq(rows[3].id, "typed_move_colors_layout",
@@ -94,6 +96,10 @@ T.eq(rows[4].value(game), "ON",
   "effectiveness hints are enabled by default")
 T.eq(rows[6].value(game), "BOLD",
   "the default tint matches Modern Party UI's card contrast")
+T.eq(rows[7].id, "typed_move_colors_opacity",
+  "detached battle-card opacity is exposed in the main Options menu")
+T.eq(rows[7].value(game), "100%",
+  "battle cards remain solid by default")
 
 local layoutProbe = setmetatable({ game = { save = { options = {
   battleLayout = "og",
@@ -101,6 +107,12 @@ local layoutProbe = setmetatable({ game = { save = { options = {
 T.eq(BattleState.wideLayout(layoutProbe), false,
   "the mod does not alter the engine's battlefield renderer")
 local inputPatch = rawget(BattleState, "_typedMoveColorsInputPatch")
+rows[7].step(game, -1)
+T.eq(rows[7].value(game), "55%",
+  "card opacity can be reduced for voxel and world backgrounds")
+T.eq(inputPatch.detachedOpacity(), 0.55,
+  "the lowest opacity choice resolves to its exact alpha")
+rows[7].step(game, 1) -- restore 100% for baseline drawing checks
 T.eq(inputPatch.navigate(1, 4, "right"), 2,
   "the detached panel maps RIGHT across its first row")
 T.eq(inputPatch.navigate(2, 4, "down"), 4,
@@ -366,6 +378,14 @@ T.eq(panelClaim, true,
   "Battle Art omits the obsolete TYPE/PP backing panel during selection")
 T.eq(hudClaim, false,
   "Battle Art retains ownership of Pokemon names, levels and HP bars")
+translations, scales = {}, {}
+Runtime.call("render.hud", function() end, game, {
+  width = 1024, height = 768,
+  gameX = 112, gameY = 24, gameWidth = 800, gameHeight = 720,
+  scale = 5,
+})
+T.check((translations[1] and translations[1].x or 999) < 112,
+  "Battle Art retains its established full-window Wide presentation")
 battle.dramaticShapeShot = nil
 
 -- A macOS Faithful 1x window is only 160 drawable units even when the OS
@@ -439,6 +459,7 @@ if love.window then love.window.getSafeArea = realSafeArea end
 
 panels, buttonLayers, circles, marks, text = {}, {}, {}, {}, {}
 local hudOK, hudErr = pcall(function()
+  translations, scales = {}, {}
   Runtime.call("render.hud", function() end, game, {
     width = 1024, height = 768,
     gameX = 112, gameY = 24, gameWidth = 800, gameHeight = 720,
@@ -447,6 +468,17 @@ local hudOK, hudErr = pcall(function()
 end)
 T.check(hudOK,
   "detached two-by-two move panel draws: " .. tostring(hudErr))
+T.check((translations[1] and translations[1].x or 0) >= 112,
+  "flat OG battle controls start inside the presented 160x144 battle area")
+T.check((translations[1].x + 392 * (scales[1] and scales[1].x or 0)) <= 912,
+  "flat OG battle controls end inside the presented 160x144 battle area")
+T.eq(translations[1] and translations[1].y, 504,
+  "flat OG controls rise to meet the Pokemon composition at row 12")
+T.eq(scales[1] and scales[1].x, 2,
+  "flat OG controls size from the battle area rather than the full window")
+T.eq((scales[1] and scales[1].x or 0)
+    * (scales[2] and scales[2].x or 0), 5,
+  "short card labels match the native Pokemon-name pixel scale")
 local cardLayers = {}
 for _, layer in ipairs(buttonLayers) do
   if #layer.points == 16 then cardLayers[#cardLayers + 1] = layer end
@@ -461,26 +493,47 @@ T.check(cardLayers[3].color[1] == 254 / 255
     and cardLayers[3].color[2] == 156 / 255
     and cardLayers[3].color[3] == 85 / 255,
   "the unselected Fire card face renders with the exact reference colour")
-local sawPP, sawSelectedPP = false, false
-local sawFullType, sawPower, sawBasePower = false, false, false
+local sawSelectedPP = false
+local sawFullType, sawPower = false, false
 local sawAbbreviatedType = false
+local sawLongFirst, sawLongSecond = false, false
 for _, call in ipairs(text) do
-  if call.value == "PP" then sawPP = true end
-  if call.value == "18/25" then sawSelectedPP = true end
+  if call.value == "PP 18/25" then sawSelectedPP = true end
   if call.value == "WATER" then sawFullType = true end
-  if call.value == "POWER" then sawPower = true end
-  if call.value == "40" then sawBasePower = true end
+  if call.value == "POWER 40" then sawPower = true end
+  if call.value == "SEMENTE" then sawLongFirst = true end
+  if call.value == "SUGA-VIDA" then sawLongSecond = true end
   if call.value == "WTR" or call.value == "FGT"
       or call.value == "TYPE/" then
     sawAbbreviatedType = true
   end
 end
-T.check(sawPP and sawSelectedPP,
+T.check(sawSelectedPP,
   "the side details card shows the selected move's current and maximum PP")
-T.check(sawFullType and sawPower and sawBasePower,
+T.check(sawFullType and sawPower,
   "the side details card shows the full move type and base power")
 T.eq(sawAbbreviatedType, false,
   "the side details card never falls back to three-letter type labels")
+T.check(sawLongFirst and sawLongSecond,
+  "long translated move names wrap to retain a readable font size")
+
+rows[7].step(game, 2) -- 100% -> 70%
+panels, buttonLayers = {}, {}
+Runtime.call("render.hud", function() end, game, {
+  width = 1024, height = 768,
+  gameX = 112, gameY = 24, gameWidth = 800, gameHeight = 720,
+  scale = 5,
+})
+local sawTranslucentFace = false
+for _, layer in ipairs(buttonLayers) do
+  if layer.mode == "fill" and layer.color[4] == 0.7 then
+    sawTranslucentFace = true
+    break
+  end
+end
+T.eq(sawTranslucentFace, true,
+  "the 70% option draws detached card faces at exactly 70% alpha")
+rows[7].step(game, -2) -- restore 100%
 T.eq(#circles, 0,
   "ordinary, resisted and super-effective HP attacks use arrows, not circles")
 T.eq(#panels, 2,
@@ -505,7 +558,7 @@ Runtime.call("render.hud", function() end, game, {
 })
 local sawNoBasePower = false
 for _, call in ipairs(text) do
-  if call.value == "---" then sawNoBasePower = true end
+  if call.value == "POWER ---" then sawNoBasePower = true end
 end
 T.eq(sawNoBasePower, true,
   "status moves show a dash instead of a misleading zero base power")
@@ -535,11 +588,8 @@ T.check(sawFight and sawPkmn and sawItem and sawRun,
   "the finished-frame Wide command panel draws all four native actions")
 T.eq(#buttonLayers, 15,
   "four command cards and one prompt card share the move selector hierarchy")
-local promptX, fightX
-for _, call in ipairs(text) do
-  if call.value == "WHAT WILL" then promptX = call.x end
-  if call.value == "FIGHT" then fightX = call.x end
-end
+local fightX = buttonLayers[1] and buttonLayers[1].points[1]
+local promptX = buttonLayers[13] and buttonLayers[13].points[1]
 T.check(promptX and fightX and promptX < fightX,
   "the WHAT WILL prompt card sits to the left of the action grid")
 
@@ -590,8 +640,8 @@ local portraitHudOK, portraitHudErr = pcall(function()
 end)
 T.check(portraitHudOK,
   "portrait detached panel draws: " .. tostring(portraitHudErr))
-T.eq(translations[1] and translations[1].y, 1184,
-  "the rendered portrait panel starts at the native move-menu row")
+T.eq(translations[1] and translations[1].y, 1144,
+  "the rendered portrait panel rises to the Pokemon edge at row 12")
 
 battle.enemy.curTypes = { "GROUND" }
 T.eq(inputPatch.effectIndicator(battle, data.moves.FIX_ELECTRIC), "circle",
@@ -742,8 +792,8 @@ local comboGame = {
 }
 local comboRows = Runtime.call("ui.options.rows",
   function(_, base) return base end, comboGame, { { id = "text_speed" } })
-T.eq(#comboRows, 14,
-  "both companions expose all thirteen settings in the main Options menu")
+T.eq(#comboRows, 15,
+  "both companions expose all fourteen settings in the main Options menu")
 T.check(combined.data.screens and combined.data.screens.PartyMenu ~= nil,
   "Modern Party UI retains sole ownership of the party screen")
 combined.release()

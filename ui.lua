@@ -386,7 +386,21 @@ return function(mod)
     love.graphics.pop()
   end
 
-  local function drawCodeInk(code, x, y, color)
+  -- Detached cards may be deliberately smaller than the 160x144 battle
+  -- surface they accompany. Grow their lettering back to the battle's own
+  -- pixel scale, then reduce only long translated labels enough to fit. This
+  -- keeps FIGHT and short move names at roughly the same visual size as the
+  -- Pokemon names without clipping names such as SEMENTE SUGA-VIDA.
+  local function detachedInkScale(text, maxWidth, preferred)
+    preferred = math.max(1, tonumber(preferred) or 1)
+    local width = Font.width(tostring(text or ""))
+    if width <= 0 then return preferred end
+    return math.max(1, math.min(preferred, maxWidth / width))
+  end
+
+  local function drawDetachedInk(text, x, y, maxWidth, color, preferred)
+    local scale = detachedInkScale(text, maxWidth, preferred)
+    text = fitText(text, maxWidth / scale)
     love.graphics.push("all")
     local shader = shaderForInk()
     if shader then
@@ -395,7 +409,50 @@ return function(mod)
     else
       love.graphics.setColor(0, 0, 0, 1)
     end
-    Font.drawCode(code, math.floor(x), math.floor(y))
+    love.graphics.translate(math.floor(x), math.floor(y))
+    love.graphics.scale(scale, scale)
+    Font.draw(text, 0, 0)
+    love.graphics.pop()
+    return scale
+  end
+
+  local function detachedLabelLayout(text, maxWidth, height, preferred)
+    text = tostring(text or "")
+    local singleScale = detachedInkScale(text, maxWidth, preferred)
+    local best
+    for split = 1, #text do
+      if text:sub(split, split) == " " then
+        local first = text:sub(1, split - 1)
+        local second = text:sub(split + 1)
+        if first ~= "" and second ~= "" then
+          local widest = math.max(Font.width(first), Font.width(second))
+          local scale = math.min(preferred, maxWidth / widest,
+            (height - 6) / 16)
+          if scale >= 1 and (not best or scale > best.scale) then
+            best = { first, second, scale = scale }
+          end
+        end
+      end
+    end
+    -- Wrapping has a visual cost, so use it only when it buys at least 25%
+    -- more glyph size. Short names remain on the familiar single line.
+    if best and best.scale >= singleScale * 1.25 then return best end
+    return { text, scale = singleScale }
+  end
+
+  local function drawCodeInk(code, x, y, color, scale)
+    love.graphics.push("all")
+    local shader = shaderForInk()
+    if shader then
+      love.graphics.setShader(shader)
+      love.graphics.setColor(rgb(color))
+    else
+      love.graphics.setColor(0, 0, 0, 1)
+    end
+    scale = math.max(1, tonumber(scale) or 1)
+    love.graphics.translate(math.floor(x), math.floor(y))
+    love.graphics.scale(scale, scale)
+    Font.drawCode(code, 0, 0)
     love.graphics.pop()
   end
 
@@ -412,6 +469,16 @@ return function(mod)
     else
       love.graphics.rectangle(mode, x, y, w, h)
     end
+  end
+
+  local function setInkColor(color, alpha)
+    local r, g, b = rgb(color)
+    love.graphics.setColor(r, g, b, alpha == nil and 1 or alpha)
+  end
+
+  local function detachedOpacity()
+    local value = tonumber(setting("opacity", "100")) or 100
+    return math.max(0.55, math.min(1, value / 100))
   end
 
   local function clearRegion(game, x, y, w, h)
@@ -471,18 +538,34 @@ return function(mod)
     -- additive overlay. Clear the exact footprint first so neither can peek
     -- through a button's deliberately transparent chamfer corners.
     if not detached then clearRegion(game, x, y, w, h) end
-    love.graphics.setColor(rgb(colors[4]))
-    chamfer("fill", x + shadow, y + shadow,
-      w - shadow, h - shadow, cut)
-    love.graphics.setColor(rgb(rim))
-    chamfer("fill", x, y, w - shadow, h - shadow, cut)
-    love.graphics.setColor(rgb(face))
-    chamfer("fill", x + inset, y + inset,
-      w - shadow - inset * 2, h - shadow - inset * 2,
-      math.max(1, cut - 1))
+    local opacity = detached and detachedOpacity() or 1
+    if opacity < 1 then
+      -- Nested translucent fills compound into an almost opaque centre. In
+      -- adjustable-alpha mode the face is therefore one fill and the shadow
+      -- and rim become outlines. The selected rail remains translucent too,
+      -- while content restores full opacity for legibility.
+      if love.graphics.setLineWidth then love.graphics.setLineWidth(1) end
+      setInkColor(colors[4], opacity * 0.7)
+      chamfer("line", x + shadow, y + shadow,
+        w - shadow, h - shadow, cut)
+      setInkColor(face, opacity)
+      chamfer("fill", x, y, w - shadow, h - shadow, cut)
+      setInkColor(rim, math.min(1, opacity + 0.15))
+      chamfer("line", x, y, w - shadow, h - shadow, cut)
+    else
+      setInkColor(colors[4])
+      chamfer("fill", x + shadow, y + shadow,
+        w - shadow, h - shadow, cut)
+      setInkColor(rim)
+      chamfer("fill", x, y, w - shadow, h - shadow, cut)
+      setInkColor(face)
+      chamfer("fill", x + inset, y + inset,
+        w - shadow - inset * 2, h - shadow - inset * 2,
+        math.max(1, cut - 1))
+    end
 
     if selected then
-      love.graphics.setColor(rgb(colors[3]))
+      setInkColor(colors[3], opacity)
       love.graphics.rectangle("fill", x + inset, y + inset + 1,
         dense and 1 or 2,
         math.max(1, h - shadow - inset * 2 - 2))
@@ -491,6 +574,7 @@ return function(mod)
     content(foreground)
     if not detached then PaletteFX.markTrueColor(x, y, w, h) end
   end
+  inputPatch.detachedOpacity = detachedOpacity
 
   local function renderBattle(battle)
     if not setting("battle_colors", true) then return end
@@ -689,7 +773,11 @@ return function(mod)
       local w = col == 0 and actionLeftW or actionRightW
       drawButton(game, "NORMAL", x, y, w, 36,
         battle.menuIndex == i, false, function(foreground)
-          drawInk(label, x + 4, y + 14, w - 9, foreground)
+          local textScale = detachedInkScale(label, w - 10,
+            layout.fontScale)
+          drawDetachedInk(label, x + 5,
+            y + math.floor((36 - 8 * textScale) / 2),
+            w - 10, foreground, textScale)
         end, true)
     end
 
@@ -699,10 +787,20 @@ return function(mod)
     local x, w = promptX, promptW
     drawButton(game, "NORMAL", x, 2, w, 74, false, false,
       function(foreground)
-        drawInk("WHAT WILL", x + 6, 14, w - 12, foreground)
         local name = battle.player and battle.player.name or ""
-        drawInk(name, x + 6, 32, w - 12, foreground)
-        drawInk("DO", x + 6, 50, w - 12, foreground)
+        local textScale = math.min(
+          detachedInkScale("WHAT WILL", w - 12, layout.fontScale),
+          detachedInkScale(name, w - 12, layout.fontScale),
+          detachedInkScale("DO", w - 12, layout.fontScale), 2)
+        local lineH = 8 * textScale
+        local gap = math.max(2, (74 - lineH * 3) / 4)
+        local y = 2 + gap
+        drawDetachedInk("WHAT WILL", x + 6, y,
+          w - 12, foreground, textScale)
+        drawDetachedInk(name, x + 6, y + lineH + gap,
+          w - 12, foreground, textScale)
+        drawDetachedInk("DO", x + 6, y + (lineH + gap) * 2,
+          w - 12, foreground, textScale)
       end, true)
   end
 
@@ -714,11 +812,19 @@ return function(mod)
           if battle.scrollPx <= 0 then battle.scrollPx = nil end
         end
         local off = battle.scrollPx or 0
-        local ys = { 20, 44 }
-        for lineIndex, line in ipairs(battle.shown or {}) do
-          local y = (ys[lineIndex] or 44) + off
+        local shown = battle.shown or {}
+        local longest = 1
+        for _, line in ipairs(shown) do longest = math.max(longest, #line) end
+        local textScale = math.min(layout.fontScale,
+          (layout.panelW - 20) / (longest * 8), 2.5)
+        local lineH = 8 * textScale
+        local lineGap = math.max(4, (74 - lineH * 2) / 3)
+        for lineIndex, line in ipairs(shown) do
+          local y = 2 + lineGap
+            + (lineIndex - 1) * (lineH + lineGap) + off
           for i = 1, #line do
-            drawCodeInk(line[i], 10 + (i - 1) * 8, y, foreground)
+            drawCodeInk(line[i], 10 + (i - 1) * 8 * textScale,
+              y, foreground, textScale)
           end
         end
         if (battle.msgWaiting or battle.msgPrompt)
@@ -769,13 +875,41 @@ return function(mod)
       safeX, safeY = unitX * dpiX, unitY * dpiY
       safeW, safeH = safeUnitW * dpiX, safeUnitH * dpiY
     end
+    -- Touch controls live in window space, so detect portrait before the OG
+    -- panel bounds are narrowed to the landscape-shaped battle rectangle.
+    local controlsTopY = portraitControlsTop(safeW, safeH, dpiY)
+    local customBattleSurface = rawget(battle, "dramaticShapeShot") ~= nil
+      or battle.letterboxWhite == false
+    -- A flat/OG battle is still a 160x144 composition even when WORLD or an
+    -- unusual phone aspect fills the rest of the window. Keep replacement
+    -- controls inside that exact presented rectangle. Staged renderers such
+    -- as Battle Art intentionally own the whole screen and retain the wider
+    -- detached treatment that already follows their composition.
+    if not customBattleSurface and viewport
+        and tonumber(viewport.gameX) and tonumber(viewport.gameY)
+        and tonumber(viewport.gameWidth) and tonumber(viewport.gameHeight) then
+      local gameX = viewport.gameX * dpiX
+      local gameY = viewport.gameY * dpiY
+      local gameRight = gameX + viewport.gameWidth * dpiX
+      local gameBottom = gameY + viewport.gameHeight * dpiY
+      local safeRight, safeBottom = safeX + safeW, safeY + safeH
+      safeX, safeY = math.max(safeX, gameX), math.max(safeY, gameY)
+      safeW = math.max(1, math.min(safeRight, gameRight) - safeX)
+      safeH = math.max(1, math.min(safeBottom, gameBottom) - safeY)
+    end
     local nativeMoveY
     if viewport and tonumber(viewport.gameY) and tonumber(viewport.scale) then
-      nativeMoveY = viewport.gameY * dpiY + 104 * viewport.scale
+      -- Flat battles lift the controls to row 12, meeting the lower edge of
+      -- the Pokemon composition. Staged renderers keep their established row.
+      local nativeRow = customBattleSurface and 104 or 96
+      nativeMoveY = viewport.gameY * dpiY + nativeRow * viewport.scale
     end
-    local controlsTopY = portraitControlsTop(safeW, safeH, dpiY)
     local layout = detachedLayout(screenW, screenH,
       safeX, safeY, safeW, safeH, nativeMoveY, controlsTopY)
+    local battleScale = viewport and tonumber(viewport.scale)
+      or layout.scale
+    layout.fontScale = math.max(1,
+      math.min(2.5, battleScale / layout.scale))
 
     love.graphics.push("all")
     love.graphics.translate(layout.originX / dpiX, layout.originY / dpiY)
@@ -808,9 +942,25 @@ return function(mod)
         drawButton(game, def.type, x, y, w, h, i == selected, false,
           function(foreground)
             local textX = x + 4
-            local textY = y + math.floor((h - 8) / 2)
-            drawInk(def.name or move.id, textX, textY,
-              w - 9, foreground)
+            local label = def.name or move.id
+            local labelLayout = detachedLabelLayout(label, w - 9, h,
+              layout.fontScale)
+            if #labelLayout == 1 then
+              local textY = y
+                + math.floor((h - 8 * labelLayout.scale) / 2)
+              drawDetachedInk(labelLayout[1], textX, textY,
+                w - 9, foreground, labelLayout.scale)
+            else
+              local lineH = 8 * labelLayout.scale
+              local gap = 2
+              local textY = y
+                + math.floor((h - lineH * 2 - gap) / 2)
+              drawDetachedInk(labelLayout[1], textX, textY,
+                w - 9, foreground, labelLayout.scale)
+              drawDetachedInk(labelLayout[2], textX,
+                textY + lineH + gap, w - 9,
+                foreground, labelLayout.scale)
+            end
             drawEffectIndicator(indicator, x, y, w, h, foreground)
           end, true)
       end
@@ -827,21 +977,31 @@ return function(mod)
       local textX = detailX + 6
       drawButton(game, def.type, detailX, 2, detailW, 74, true, false,
         function(foreground)
-          drawInk(TypeChart.displayName(def.type), textX, 10,
-            detailW - 12, foreground)
           local power = type(def.power) == "number" and def.power > 0
             and tostring(math.floor(def.power)) or "---"
-          drawInk("POWER", textX, 31, 40, foreground)
-          drawInk(power, detailX + detailW - 30, 31, 24, foreground)
+          local typeText = TypeChart.displayName(def.type)
+          local powerText = "POWER " .. power
+          local ppText
           if phase == "moveSelect" then
             local maxPP = (def.pp or 0)
               + (selectedMove.ppUps or 0) * math.floor((def.pp or 0) / 5)
-            drawInk("PP", textX, 52, 16, foreground)
-            drawInk(("%2d/%2d"):format(selectedMove.pp or 0, maxPP),
-              textX + 23, 52, detailW - 33, foreground)
+            ppText = ("PP %d/%d"):format(selectedMove.pp or 0, maxPP)
           else
-            drawInk("COPY", textX, 52, detailW - 12, foreground)
+            ppText = "COPY"
           end
+          local available = detailW - 12
+          local scales = {
+            detachedInkScale(typeText, available, layout.fontScale),
+            detachedInkScale(powerText, available, layout.fontScale),
+            detachedInkScale(ppText, available, layout.fontScale),
+          }
+          local ys = { 8, 31, 54 }
+          drawDetachedInk(typeText, textX, ys[1], available,
+            foreground, scales[1])
+          drawDetachedInk(powerText, textX, ys[2], available,
+            foreground, scales[2])
+          drawDetachedInk(ppText, textX, ys[3], available,
+            foreground, scales[3])
         end, true)
     end
 
