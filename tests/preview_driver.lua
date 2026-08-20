@@ -55,6 +55,18 @@ return function(game)
     end
   end
 
+  local function textOnly(value)
+    game.save.options.modOptions = game.save.options.modOptions or {}
+    game.save.options.modOptions.typed_move_colors =
+      game.save.options.modOptions.typed_move_colors or {}
+    game.save.options.modOptions.typed_move_colors.text_only = value
+    if game.mods and game.mods.modOptions then
+      game.mods.modOptions.typed_move_colors =
+        game.mods.modOptions.typed_move_colors or {}
+      game.mods.modOptions.typed_move_colors.text_only = value
+    end
+  end
+
   local mon = Pokemon.new(game.data, "CHARIZARD", 50)
   local allMoves = {
     { id = "FLAMETHROWER", pp = game.data.moves.FLAMETHROWER.pp },
@@ -123,4 +135,12 @@ return function(game)
   U.wait(12)
   U.log("PASS wide battle move colours prepared")
   U.shot(game, DIR .. "/typed_move_battle_wide.png")
+
+  -- Maximum-compatibility mode must restore the engine's complete native
+  -- layout and recolour only the four move-name glyph runs.
+  game.save.options.battleLayout = "og"
+  textOnly(true)
+  U.wait(8)
+  U.log("PASS Text Only retains native battle UI with typed move-name ink")
+  U.shot(game, DIR .. "/typed_move_battle_text_only.png")
 end

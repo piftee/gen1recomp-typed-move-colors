@@ -66,11 +66,13 @@ local run = T.sdk.loadMods({
 T.eq(#run.errors, 0, "loads clean (" .. tostring(run.errors[1]) .. ")")
 
 local schema = run.loader.optionSchemas.typed_move_colors or {}
-T.eq(#schema, 6, "all six presentation settings are registered")
+T.eq(#schema, 7, "all seven presentation settings are registered")
 T.eq(schema[3].key, "effect_hints",
   "the mod settings page exposes the effectiveness toggle")
 T.eq(schema[3].label, "MOVE EFFECT",
   "the mod settings page uses the same Move Effect label")
+T.eq(schema[7].key, "text_only",
+  "the mod settings page exposes the native text-only mode")
 
 local current
 local stack = {}
@@ -84,7 +86,7 @@ local game = {
 
 local rows = Runtime.call("ui.options.rows",
   function(_, base) return base end, game, { { id = "text_speed" } })
-T.eq(#rows, 7, "the six settings appear in the main Options menu")
+T.eq(#rows, 8, "the seven settings appear in the main Options menu")
 T.eq(rows[2].id, "typed_move_colors_battle_colors",
   "battle colours are the first companion setting")
 T.eq(rows[3].id, "typed_move_colors_layout",
@@ -101,6 +103,10 @@ T.eq(rows[7].id, "typed_move_colors_opacity",
   "detached battle-card opacity is exposed in the main Options menu")
 T.eq(rows[7].value(game), "100%",
   "battle cards remain solid by default")
+T.eq(rows[8].id, "typed_move_colors_text_only",
+  "text-only compatibility is exposed in the main Options menu")
+T.eq(rows[8].value(game), "OFF",
+  "the existing card presentation remains the default")
 
 local layoutProbe = setmetatable({ game = { save = { options = {
   battleLayout = "og",
@@ -311,6 +317,54 @@ local battle = {
   end,
 }
 current = battle
+
+-- TEXT ONLY is a maximum-compatibility presentation: all native geometry,
+-- labels, cursors and input stay in charge while only the move-name glyphs
+-- are redrawn with dark, readable type ink.
+rows[8].step(game, 1)
+T.eq(rows[8].value(game), "ON",
+  "the main Options row enables text-only compatibility live")
+T.eq(inputPatch.detached(battle), false,
+  "text-only mode never activates the detached Wide selector")
+T.eq(inputPatch.replacementPresentationOwnsPhase(battle), false,
+  "text-only mode never claims a native or voxel battle surface")
+panels, buttonLayers, circles, marks, text = {}, {}, {}, {}, {}
+BattleState.drawTextArea(battle)
+T.check(#panels > 0,
+  "text-only mode leaves the complete native move GUI drawing intact")
+panels, buttonLayers, circles, marks, text = {}, {}, {}, {}, {}
+Runtime.call("battle.overlay", function() end, battle)
+T.eq(#buttonLayers, 0,
+  "text-only mode draws no replacement card geometry")
+T.eq(#panels, 0,
+  "text-only mode neither clears nor repaints native panel rectangles")
+T.eq(#marks, 4,
+  "text-only mode recolours exactly the four native move names")
+T.eq(marks[1].x, 48,
+  "text-only battle ink starts at the native move-name column")
+T.eq(marks[1].y, 104,
+  "text-only battle ink follows the native first move row")
+T.check(text[1] and text[1].value == "EMBER"
+    and text[1].color[1] == 140 / 255
+    and text[1].color[2] == 86 / 255
+    and text[1].color[3] == 47 / 255,
+  "Fire names use a dark readable form of the live Fire palette")
+T.check(text[2] and text[2].value == "WATER GUN"
+    and text[2].color[1] == 42 / 255
+    and text[2].color[2] == 79 / 255
+    and text[2].color[3] == 118 / 255,
+  "Water names use a dark readable form of the live Water palette")
+buttonLayers = {}
+Runtime.call("render.hud", function() end, game, {
+  width = 1024, height = 768,
+})
+T.eq(#buttonLayers, 0,
+  "text-only mode cannot draw detached or compatibility-owned cards")
+rows[8].step(game, 1)
+T.eq(rows[8].value(game), "OFF",
+  "text-only compatibility can be disabled live")
+panels, buttonLayers, circles, marks, text = {}, {}, {}, {}, {}
+
 T.eq(inputPatch.effectIndicator(battle, data.moves.FIX_FIRE), "double_up",
   "a super-effective attack receives two up arrows")
 T.eq(inputPatch.effectIndicator(battle, data.moves.FIX_WATER), "down",
@@ -884,6 +938,46 @@ T.eq(marks[1].h, 16,
 T.eq(marks[2].x, 12,
   "unselected list buttons preserve the list cursor column")
 
+-- The compatibility option applies the same name-only treatment to native
+-- move-management screens without tinting their PP, cursors or boxes.
+rows[8].step(game, 1)
+panels, buttonLayers, marks, text = {}, {}, {}, {}
+current = summary
+summary:draw()
+T.eq(#buttonLayers, 0,
+  "text-only summary keeps the native move/PP rows card-free")
+T.eq(#marks, 4,
+  "text-only summary recolours its four move names")
+T.eq(marks[1].x, 16,
+  "text-only summary uses the native move-name column")
+
+panels, buttonLayers, marks, text = {}, {}, {}, {}
+current = learner
+learner:draw()
+T.eq(#buttonLayers, 0,
+  "text-only move learning keeps the native list and cursor")
+T.eq(#marks, 4,
+  "text-only move learning recolours its four move names")
+T.eq(marks[1].x, 48,
+  "text-only move learning uses the native move-name column")
+
+panels, buttonLayers, marks, text = {}, {}, {}, {}
+current = list
+list:draw()
+T.eq(#buttonLayers, 0,
+  "text-only PP-item selection keeps the native list presentation")
+T.eq(#marks, 4,
+  "text-only PP-item selection recolours only its move names")
+T.eq(marks[1].x, 16,
+  "text-only PP-item names retain the native list alignment")
+local recoloredPP = false
+for _, call in ipairs(text) do
+  if call.value == tostring(moves[1].pp) then recoloredPP = true end
+end
+T.eq(recoloredPP, false,
+  "text-only PP-item selection does not recolour the PP column")
+rows[8].step(game, 1)
+
 -- A modal above one of the patched menus must own the final pixels. Skipping
 -- the underlay prevents a true-colour rectangle from punching through it.
 panels, buttonLayers, marks, text = {}, {}, {}, {}
@@ -919,8 +1013,8 @@ local comboGame = {
 }
 local comboRows = Runtime.call("ui.options.rows",
   function(_, base) return base end, comboGame, { { id = "text_speed" } })
-T.eq(#comboRows, 15,
-  "both companions expose all fourteen settings in the main Options menu")
+T.eq(#comboRows, 16,
+  "both companions expose all fifteen settings in the main Options menu")
 T.check(combined.data.screens and combined.data.screens.PartyMenu ~= nil,
   "Modern Party UI retains sole ownership of the party screen")
 combined.release()
