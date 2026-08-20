@@ -4,6 +4,10 @@ tests/fixtures/useful_move_info/main.lua
 tests/fixtures/useful_move_info/manifest.json
 tests/fixtures/gen3_battle_ui/main.lua
 tests/fixtures/gen3_battle_ui/manifest.json
+tests/fixtures/gen1_modern_ui/main.lua
+tests/fixtures/gen1_modern_ui/manifest.json
+tests/fixtures/dramatic_shape/main.lua
+tests/fixtures/dramatic_shape/manifest.json
 tests/fixtures/battle_art_voxel_fork/main.lua
 tests/fixtures/battle_art_voxel_fork/manifest.json
 tests/fixtures/potato_voxel/main.lua

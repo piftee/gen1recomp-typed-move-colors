@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.9 - 2026-08-20
+
+- Added Modern UI `gen1_modern_ui` compatibility for GAME layout, suppressing the empty native white move/details slab while retaining compact type-coloured move and PP cards over its edited battle composition.
+- Extended paper-free GAME move selection to Potato Voxel and active Dramatic Shape 1.8.x 3D battles through their exported `OverworldBattle` panel seams; their worlds, Pokémon HUDs, commands and dialogue remain renderer-owned.
+- Made selection unambiguous with black text on normal cards and white text on a darker selected type face, plus a thicker black focus frame and white selection rail.
+- Kept the Card Opacity setting effective on compact custom-renderer cards as well as the Wide detached presentation.
+- Added focused regression coverage for Modern UI 0.9.19, Dramatic Shape 1.8.4, Potato Voxel GAME panels and selected-card foreground contrast; the released Dramatic Shape 1.8.4 and 1.8.5 packages were also loaded directly against the adapter.
+
 ## 0.3.8 - 2026-08-14
 
 - Preserved complete translated move names on summary rows by using the space freed when redundant type abbreviations were removed and scaling long labels instead of clipping their final characters.

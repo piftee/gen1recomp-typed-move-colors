@@ -2,8 +2,8 @@
 
 Typed Move Colors turns each move into a chamfered type-coloured button while
 retaining Pokémon Red, Blue and Yellow's original font and four-shade rendering. Its
-layered rim, offset shadow and bright selected state mirror Modern Party UI's
-party cards, but the mod also works independently.
+layered rim, offset shadow and high-contrast selected state mirror Modern
+Party UI's party cards, but the mod also works independently.
 
 ## Install
 
@@ -63,7 +63,10 @@ Battle Art retain the wider window-space presentation that follows their own
 canvas. Pokémon with one or two moves use full-height buttons; three or four
 moves use the two-by-two grid. The background, sprites and battle HUD remain
 owned by the game or active renderer. **Game** restores the engine's original
-compact move list whenever its own Battle Layout setting is `OG`.
+compact move list whenever its own Battle Layout setting is `OG`. On Modern
+UI, Potato Voxel and active Dramatic Shape 3D battles, **Game** instead draws
+that same compact coloured layout without obsolete native paper/glass panels,
+allowing the edited world composition to remain visible.
 
 At very small faithful resolutions—including a Retina 1x window whose 320
 physical pixels are only 160 LOVE layout units—the normal two-by-two selector
@@ -81,10 +84,11 @@ Pokémon names. Short labels reach that size directly; long translated move
 names wrap across two lines or scale down only as far as the available card
 width requires.
 
-Card Opacity controls the detached battle cards without fading their text.
-The default 100% retains the solid type treatment; 85%, 70% and 55% let WORLD,
-voxel and other staged battle scenery show through the faces and frames. It
-does not alter summary screens, move-learning menus or Gen 3 UI-owned panels.
+Card Opacity controls detached Wide cards and compact custom-renderer GAME
+cards without fading their text. The default 100% retains the solid type
+treatment; 85%, 70% and 55% let WORLD, voxel and other staged battle scenery
+show through the faces and frames. It does not alter summary screens,
+move-learning menus or Gen 3 UI-owned panels.
 
 On tall mobile displays, the responsive selector follows the lower edge of the
 Pokémon composition, directly beneath the player's HUD. It also reads
@@ -92,9 +96,10 @@ the live customized touch-control layout and stays above the upper edge of the
 D-pad/A/B cluster. That control edge becomes the fallback when a custom battle
 renderer cannot provide the normal menu-row anchor.
 
-Bold mirrors Modern Party UI: unselected buttons use the strong type shade,
-while the selected button becomes bright with dark text. Soft keeps every face
-on the lighter shade and relies on its selection rail and rim for focus.
+Bold mirrors Modern Party UI: unselected buttons use the strong type shade.
+The selected button uses a darker type face, white text, a thicker black frame
+and a white selection rail. Soft keeps unselected faces on the lighter shade
+while retaining the same unmistakable selected treatment.
 
 ## Type palette mapping
 
@@ -110,7 +115,7 @@ reference-derived palette exactly:
 | Psychic | `#F97177` | Ice | `#73CEBF` | Dragon | `#096DC3` |
 | Dark | `#5B5265` | Fairy | `#EC90E7` | Steel | `#5B8EA1` |
 
-Each colour receives a lighter selected shade plus the game's paper and ink
+Each colour receives a lighter companion shade plus the game's paper and ink
 endpoints. OG Red/Blue/Yellow, monochrome, inverted and Classic display modes
 still apply. Dark, Fairy and Steel are ready for content mods; unknown custom
 types fall back to Normal.
@@ -147,7 +152,8 @@ draws the matching cards after the final battlefield composition. This avoids
 transparent WORLD holes and retained white rectangles instead of erasing a
 box after it was rendered. Directional input is mapped to the same two-by-two
 arrangement; native commands, PP validation and move execution remain
-unchanged. GAME mode retains the engine's complete native presentation.
+unchanged. GAME mode retains the engine's complete native presentation unless
+an active custom renderer needs the compact paper-free move treatment.
 
 [Useful Move Info](https://github.com/ShaneMcGovernIE/useful-move-info) is an
 optional companion. Its Start/Q information box remains above the responsive
@@ -161,6 +167,13 @@ selected type palette to its four rounded move rows and PP details strip.
 The duplicate responsive selector is suppressed, while the overhaul retains
 its fonts, spacing, PP readouts and battle controls.
 
+[Modern UI](https://github.com/espinas201-oss/Modern-UI-edit-/releases/tag/Gen1recomp)
+is supported through its stable `gen1_modern_ui` package ID. In GAME layout,
+Typed Move Colors suppresses the classic white move/details slab and draws
+compact type-coloured move and PP cards directly over Modern UI's edited
+battle composition. When Modern UI's own full battle presenter is enabled, it
+retains ownership of the finished-window presentation.
+
 [Battle Art](https://github.com/absol89/DramaticShapeVoxelMod) v1.8.3 is
 supported through its public battle-presentation contract. While the coloured
 Wide presentation is active, Battle Art omits the corresponding native text
@@ -173,8 +186,15 @@ Battle Art-owned.
 through its exported OverworldBattle module. In Wide mode, Typed Move Colors
 suppresses Potato Voxel's obsolete command, dialogue and move-menu glass
 rectangles before they are composed, while leaving its world scene, Pokémon
-sprites, names, levels and HP bars under Potato Voxel's ownership. GAME mode
-keeps Potato Voxel's original interface unchanged.
+sprites, names, levels and HP bars under Potato Voxel's ownership. GAME also
+suppresses only the obsolete move-selection glass and supplies a compact PP
+card; Potato's command and dialogue panels remain unchanged.
+
+[Dramatic Shape Voxel Mod](https://github.com/scottcandy34/DramaticShapeVoxelMod-latest)
+1.8.x is supported through its exported `OverworldBattle` module. During an
+active 3D-BTL shot, GAME omits Dramatic Shape's old move glass while retaining
+its world, sprites, Pokémon HUDs, commands and dialogue. With 3D-BTL disabled,
+the ordinary GAME selector is left untouched.
 
 Replacement command and move-detail labels use Gen1Recomp's active string
 catalog. Power and PP retain one stable font size, stock type names use the
