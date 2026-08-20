@@ -238,11 +238,15 @@ local realPolygon = graphics.polygon
 local realSetColor = graphics.setColor
 local realTranslate = graphics.translate
 local realScale = graphics.scale
+local realNewShader = graphics.newShader
 local realFontDraw = Font.draw
 local realMark = PaletteFX.markTrueColor
 local panels, buttonLayers, circles, marks, text = {}, {}, {}, {}, {}
 local translations, scales = {}, {}
 local activeColor
+-- Headless LOVE has no shader compiler. Supply a harmless shader token so
+-- the test can observe the requested foreground colours used by drawInk.
+graphics.newShader = function() return {} end
 graphics.setColor = function(r, g, b, a)
   activeColor = { r, g, b, a }
   return realSetColor(r, g, b, a)
@@ -277,7 +281,9 @@ PaletteFX.markTrueColor = function(x, y, w, h)
   marks[#marks + 1] = { x = x, y = y, w = w, h = h }
 end
 Font.draw = function(value, x, y)
-  text[#text + 1] = { value = value, x = x, y = y }
+  text[#text + 1] = {
+    value = value, x = x, y = y, color = activeColor,
+  }
 end
 
 local moves = {
@@ -500,6 +506,10 @@ T.eq(#marks, 0,
   "the finished-frame panel does not write stale canvas palette marks")
 T.eq(cardLayers[5].color[1], 0,
   "the detached selected move also uses the black focus rim")
+T.check(cardLayers[6].color[1] == 42 / 255
+    and cardLayers[6].color[2] == 79 / 255
+    and cardLayers[6].color[3] == 118 / 255,
+  "the selected Water card uses a dark type face behind white text")
 T.check(cardLayers[3].color[1] == 254 / 255
     and cardLayers[3].color[2] == 156 / 255
     and cardLayers[3].color[3] == 85 / 255,
@@ -508,12 +518,23 @@ local sawSelectedPP = false
 local sawFullType, sawPower = false, false
 local sawAbbreviatedType = false
 local sawLongFirst, sawLongSecond = false, false
+local sawBlackNormalText, sawWhiteSelectedText = false, false
 for _, call in ipairs(text) do
   if call.value == "PP 18/25" then sawSelectedPP = true end
   if call.value == "WATER" then sawFullType = true end
   if call.value == "POWER 40" then sawPower = true end
   if call.value == "SEMENTE" then sawLongFirst = true end
   if call.value == "SUGA-VIDA" then sawLongSecond = true end
+  if call.value == "EMBER" and call.color
+      and call.color[1] == 0 and call.color[2] == 0
+      and call.color[3] == 0 then
+    sawBlackNormalText = true
+  end
+  if call.value == "WATER GUN" and call.color
+      and call.color[1] == 1 and call.color[2] == 1
+      and call.color[3] == 1 then
+    sawWhiteSelectedText = true
+  end
   if call.value == "WTR" or call.value == "FGT"
       or call.value == "TYPE/" then
     sawAbbreviatedType = true
@@ -527,6 +548,8 @@ T.eq(sawAbbreviatedType, false,
   "the side details card never falls back to three-letter type labels")
 T.check(sawLongFirst and sawLongSecond,
   "long translated move names wrap to retain a readable font size")
+T.check(sawBlackNormalText and sawWhiteSelectedText,
+  "normal move text is black while the selected move text is white")
 
 rows[7].step(game, 2) -- 100% -> 70%
 panels, buttonLayers = {}, {}
@@ -743,6 +766,48 @@ T.eq(marks[1].y, 104, "classic chips follow the first move row")
 T.eq(marks[1].w, 152, "classic buttons retain complete move names")
 T.eq(marks[2].y, 114, "classic selection follows the live move index")
 
+-- A staged renderer has transparent world pixels where the native paper box
+-- used to be. In GAME, replace only its compact move phase so cleanup cannot
+-- leave the empty white TYPE/PP slab reported with Potato Voxel.
+battle.dramaticShapeShot = { canvas = true }
+battle.letterboxWhite = false
+panels, buttonLayers, marks, text = {}, {}, {}, {}
+BattleState.drawTextArea(battle)
+T.eq(#panels, 0,
+  "GAME suppresses the native move box on a transparent battle surface")
+local compactTextClaim = Runtime.call(presentation.suppressHook,
+  function() return false end, {
+    apiVersion = 1,
+    sourceModId = "BATTLE_ART_VOXEL_FORK",
+    surface = "text",
+    battle = battle,
+  })
+T.eq(compactTextClaim, true,
+  "GAME claims a staged renderer's obsolete native move text")
+Runtime.call("battle.overlay", function() end, battle)
+T.eq(#marks, 5,
+  "transparent GAME draws four compact moves and one PP card")
+T.eq(#buttonLayers, 15,
+  "transparent GAME uses complete layered cards without a paper backing")
+local sawPaperCleanup, sawCompactPP = false, false
+for _, panel in ipairs(panels) do
+  if (panel.x == 0 and panel.y == 104
+      and panel.w == 160 and panel.h == 40)
+      or (panel.x == 8 and panel.y == 72
+        and panel.w == 72 and panel.h == 16) then
+    sawPaperCleanup = true
+  end
+end
+for _, call in ipairs(text) do
+  if call.value == "PP 18/25" then sawCompactPP = true end
+end
+T.eq(sawPaperCleanup, false,
+  "transparent GAME never paints the old white move or TYPE regions")
+T.eq(sawCompactPP, true,
+  "transparent GAME retains PP in a compact type-coloured card")
+battle.dramaticShapeShot = nil
+battle.letterboxWhite = nil
+
 rows[3].step(game, 1) -- restore WIDE
 panels, buttonLayers, marks, text = {}, {}, {}, {}
 battle.wideLayout = function() return true end
@@ -832,6 +897,7 @@ graphics.circle = realCircle
 graphics.setColor = realSetColor
 graphics.translate = realTranslate
 graphics.scale = realScale
+graphics.newShader = realNewShader
 Font.draw = realFontDraw
 PaletteFX.markTrueColor = realMark
 PaletteFX.setMode(previousMode)
@@ -1071,8 +1137,8 @@ gen3Combined.release()
 
 -- Potato Voxel renders glass panels from its exported textRects list before
 -- the native drawTextArea method runs. Typed Move Colors filters those text
--- surfaces only while Wide owns the phase, retaining the original list for
--- GAME mode and leaving Potato's separate Pokemon HUD surfaces untouched.
+-- surfaces while either Wide or the transparent GAME presentation owns the
+-- phase, leaving Potato's separate Pokemon HUD surfaces untouched.
 local potatoData = T.fixtures.fresh()
 Font.load(potatoData)
 local potatoCombined = T.sdk.loadMods({
@@ -1109,9 +1175,136 @@ T.eq(next(potatoModule.textRects(potatoBattle)), nil,
   "Wide suppresses Potato Voxel's obsolete white/glass move panel")
 
 potatoCombined.loader.modOptions.typed_move_colors = { layout = "game" }
+T.eq(next(potatoModule.textRects(potatoBattle)), nil,
+  "GAME mode also suppresses Potato Voxel's obsolete move-panel glass")
+potatoBattle.phase = "menu"
 local nativePotatoRects = potatoModule.textRects(potatoBattle)
-T.check(nativePotatoRects.box ~= nil and nativePotatoRects.moves ~= nil,
-  "GAME mode restores Potato Voxel's original text panel rectangles")
+T.check(nativePotatoRects.box ~= nil,
+  "GAME commands retain Potato Voxel's renderer-owned text panel")
 potatoCombined.release()
+
+-- Dramatic Shape 1.8.x publishes the same OverworldBattle module. Its staged
+-- shot marker scopes the GAME replacement to active 3D battles, so disabling
+-- 3D-BTL returns the ordinary native selector.
+local dramaticData = T.fixtures.fresh()
+Font.load(dramaticData)
+local dramaticCombined = T.sdk.loadMods({
+  "mods/typed_move_colors/tests/fixtures/dramatic_shape",
+  "mods/typed_move_colors",
+}, { data = dramaticData, dev = true })
+T.eq(#dramaticCombined.errors, 0,
+  "loads beside Dramatic Shape 1.8.4 without compatibility errors")
+T.eq(dramaticCombined.loader.order[1], "DRAMATIC_SHAPE",
+  "Dramatic Shape loads before its Typed Move Colors adapter")
+dramaticCombined.loader.modOptions.typed_move_colors = { layout = "game" }
+
+local dramaticBattle = {
+  phase = "moveSelect",
+  moveIndex = 1,
+  player = { curMoves = {} },
+  dramaticShapeShot = { canvas = true, scale = 4 },
+  letterboxWhite = false,
+  wideLayout = function() return false end,
+}
+local dramaticStack = {}
+function dramaticStack:top() return dramaticBattle end
+local dramaticGame = {
+  data = dramaticCombined.data,
+  save = { options = {} },
+  mods = dramaticCombined.loader,
+  stack = dramaticStack,
+}
+dramaticBattle.game = dramaticGame
+local dramaticModule = dramaticCombined.loader.exports.DRAMATIC_SHAPE
+  .overworldBattle
+local dramaticPatch = rawget(BattleState, "_typedMoveColorsInputPatch")
+T.eq(dramaticPatch.dramaticTextRectsPatched, true,
+  "Dramatic Shape's exported text-panel seam is installed")
+T.eq(next(dramaticModule.textRects(dramaticBattle)), nil,
+  "Dramatic Shape GAME omits its obsolete white/glass move panels")
+dramaticBattle.phase = "menu"
+T.check(dramaticModule.textRects(dramaticBattle).box ~= nil,
+  "Dramatic Shape GAME retains its command and dialogue glass")
+dramaticBattle.phase = "moveSelect"
+dramaticBattle.dramaticShapeShot = nil
+dramaticBattle.letterboxWhite = nil
+local flatDramaticRects = dramaticModule.textRects(dramaticBattle)
+T.check(flatDramaticRects.box ~= nil and flatDramaticRects.moves ~= nil,
+  "Dramatic Shape with 3D-BTL off retains the ordinary GAME selector")
+dramaticCombined.release()
+
+-- Modern UI edits the final battle composition even when its full WIP battle
+-- presenter is not selected. In GAME mode, omit the native paper selector and
+-- draw the compact typed cards directly over that composition.
+local modernData = T.fixtures.fresh()
+modernData.moves.FIX_WATER = {
+  name = "WATER GUN", type = "WATER", power = 40, pp = 25,
+}
+Font.load(modernData)
+local modernCombined = T.sdk.loadMods({
+  "mods/typed_move_colors/tests/fixtures/gen1_modern_ui",
+  "mods/typed_move_colors",
+}, { data = modernData, dev = true })
+T.eq(#modernCombined.errors, 0,
+  "loads beside Modern UI without compatibility errors")
+T.eq(modernCombined.loader.order[1], "gen1_modern_ui",
+  "Modern UI loads before its Typed Move Colors adapter")
+modernCombined.loader.modOptions.typed_move_colors = { layout = "game" }
+
+local modernBattle = {
+  phase = "moveSelect",
+  moveIndex = 1,
+  player = { curMoves = { { id = "FIX_WATER", pp = 18 } } },
+  wideLayout = function() return false end,
+}
+local modernStack = {}
+function modernStack:top() return modernBattle end
+local modernGame = {
+  data = modernCombined.data,
+  save = { options = {} },
+  mods = modernCombined.loader,
+  stack = modernStack,
+}
+modernBattle.game = modernGame
+local modernPatch = rawget(BattleState, "_typedMoveColorsInputPatch")
+T.eq(modernPatch.gen1ModernUIInstalled(), true,
+  "the active Modern UI package is detected by its stable mod id")
+T.eq(modernPatch.customBattleSurface(modernBattle), true,
+  "Modern UI's edited battle is treated as a custom composition")
+T.eq(modernPatch.compactPresentationOwnsPhase(modernBattle), true,
+  "GAME mode owns move selection over Modern UI without native paper")
+
+local modernRects, modernPolygons = {}, 0
+local modernRealRectangle = love.graphics.rectangle
+local modernRealPolygon = love.graphics.polygon
+love.graphics.rectangle = function(mode, x, y, w, h, ...)
+  if mode == "fill" then
+    modernRects[#modernRects + 1] = { x = x, y = y, w = w, h = h }
+  end
+  return modernRealRectangle(mode, x, y, w, h, ...)
+end
+love.graphics.polygon = function(mode, points)
+  modernPolygons = modernPolygons + 1
+  if modernRealPolygon then return modernRealPolygon(mode, points) end
+end
+BattleState.drawTextArea(modernBattle)
+T.eq(#modernRects, 0,
+  "Modern UI GAME selection suppresses the native white details slab")
+Runtime.call("battle.overlay", function() end, modernBattle)
+local modernPaperCleanup = false
+for _, rect in ipairs(modernRects) do
+  if (rect.x == 0 and rect.y == 104 and rect.w == 160 and rect.h == 40)
+      or (rect.x == 8 and rect.y == 72
+        and rect.w == 72 and rect.h == 16) then
+    modernPaperCleanup = true
+  end
+end
+T.eq(modernPaperCleanup, false,
+  "Modern UI GAME cards never repaint native paper cleanup rectangles")
+T.eq(modernPolygons, 6,
+  "Modern UI GAME draws one typed move card and one compact PP card")
+love.graphics.rectangle = modernRealRectangle
+love.graphics.polygon = modernRealPolygon
+modernCombined.release()
 
 T.finish("typed_move_colors")

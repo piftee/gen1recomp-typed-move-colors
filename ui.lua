@@ -88,6 +88,11 @@ return function(mod)
     return not (options and options.revampedBattleUI == false)
   end
 
+  local function gen1ModernUIInstalled()
+    local ok, handle = pcall(mod.find, "gen1_modern_ui")
+    return ok and handle ~= nil
+  end
+
   local function battleArtPresentation()
     local ok, handle = pcall(mod.find, "BATTLE_ART_VOXEL_FORK")
     local presentation = ok and handle and handle.exports
@@ -100,13 +105,14 @@ return function(mod)
     return presentation
   end
 
-  -- Potato Voxel predates Battle Art's public presentation contract, but it
-  -- exports its OverworldBattle module through the documented `lib.require`
-  -- seam. Its textRects list is the single source used for the frosted
-  -- command/dialogue/move panels, so filtering that list lets the finished-
-  -- frame Wide UI take ownership without disturbing Potato's world or HUDs.
-  local function potatoVoxelBattleModule()
-    local ok, handle = pcall(mod.find, "potato_voxel")
+  -- Potato Voxel and upstream Dramatic Shape predate Battle Art's public
+  -- presentation contract, but both export their OverworldBattle module
+  -- through the documented `lib.require` seam. Its textRects list is the
+  -- source used for their frosted command/dialogue/move panels, so filtering
+  -- that list lets a Typed presentation take ownership without disturbing
+  -- either renderer's world or Pokemon HUDs.
+  local function voxelBattleModule(modId)
+    local ok, handle = pcall(mod.find, modId)
     local lib = ok and handle and handle.exports and handle.exports.lib
     if type(lib) ~= "table" or type(lib.require) ~= "function" then
       return nil
@@ -204,6 +210,7 @@ return function(mod)
   inputPatch.detached = detachedGrid
   inputPatch.navigate = WideBattle.moveGridIndex
   inputPatch.gen3BattleUIActive = gen3BattleUIActive
+  inputPatch.gen1ModernUIInstalled = gen1ModernUIInstalled
   inputPatch.detachedSurfaceFits = detachedSurfaceFits
 
   local function isTop(screen)
@@ -220,8 +227,35 @@ return function(mod)
     return owned and detachedGrid(battle)
   end
 
+  local function customBattleSurface(battle)
+    return battle and (rawget(battle, "dramaticShapeShot") ~= nil
+      or battle.letterboxWhite == false
+      or gen1ModernUIInstalled())
+  end
+
+  -- GAME normally leaves the engine's compact move selector in charge. A
+  -- transparent/custom renderer is the exception: repainting pieces of that
+  -- native box with the engine's paper shade produces the white slab seen in
+  -- Potato Voxel and Modern UI's edited battle composition. Own only its move
+  -- and Mimic phases, then draw the same compact geometry without an opaque
+  -- cleanup pass. Commands and dialogue remain renderer-owned in GAME mode.
+  local function compactPresentationOwnsPhase(battle)
+    if not setting("battle_colors", true)
+        or setting("layout", "wide") == "wide"
+        or engineWide(battle) or not customBattleSurface(battle) then
+      return false
+    end
+    local phase = battle and battle.phase
+    return phase == "moveSelect" or phase == "mimicSelect"
+  end
+
+  local function replacementPresentationOwnsPhase(battle)
+    return widePresentationOwnsPhase(battle)
+      or compactPresentationOwnsPhase(battle)
+  end
+
   inputPatch.trackPresentationBattle = function(battle)
-    if widePresentationOwnsPhase(battle) then
+    if replacementPresentationOwnsPhase(battle) then
       inputPatch.presentationBattle = battle
     elseif inputPatch.presentationBattle == battle then
       inputPatch.presentationBattle = nil
@@ -243,7 +277,7 @@ return function(mod)
         return claimed
       end
       local battle = request.battle or inputPatch.presentationBattle
-      if not widePresentationOwnsPhase(battle) then return claimed end
+      if not replacementPresentationOwnsPhase(battle) then return claimed end
       if request.surface == battleArt.surfaces.text
           or request.surface == battleArt.surfaces.panels then
         return true
@@ -257,7 +291,9 @@ return function(mod)
   -- what produced WORLD-shaped holes, retained RGB rectangles on translucent
   -- renderers, and the stray TYPE/PP slab visible with Fancy Battle/Battle
   -- Art. The wrapper is process-stable across mod reloads, like the input
-  -- patch above, and GAME mode always falls through to the engine unchanged.
+  -- patch above. Ordinary GAME mode still falls through unchanged; a staged
+  -- renderer's compact move phase is replaced without painting paper into
+  -- its transparent battle surface.
   local textPatch = rawget(BattleState, "_typedMoveColorsTextPatch")
   if not textPatch then
     textPatch = { original = BattleState.drawTextArea }
@@ -267,32 +303,39 @@ return function(mod)
       return textPatch.original(self, ...)
     end
   end
-  textPatch.owns = widePresentationOwnsPhase
+  textPatch.owns = replacementPresentationOwnsPhase
   inputPatch.widePresentationOwnsPhase = widePresentationOwnsPhase
+  inputPatch.compactPresentationOwnsPhase = compactPresentationOwnsPhase
+  inputPatch.replacementPresentationOwnsPhase =
+    replacementPresentationOwnsPhase
+  inputPatch.customBattleSurface = customBattleSurface
 
-  -- Potato Voxel draws its translucent glass rectangles before
-  -- BattleState.drawTextArea. Suppressing drawTextArea alone therefore
-  -- leaves a white/frosted block behind. Filter only Potato's text-surface
-  -- rectangles while Wide owns the phase; enemy/player HUD rectangles stay
-  -- in its renderer and GAME mode receives the original list unchanged.
-  local potatoBattle = potatoVoxelBattleModule()
-  if potatoBattle and type(potatoBattle.textRects) == "function" then
-    local potatoPatch = rawget(potatoBattle,
-      "_typedMoveColorsTextRectsPatch")
-    if not potatoPatch then
-      potatoPatch = { original = potatoBattle.textRects }
-      rawset(potatoBattle, "_typedMoveColorsTextRectsPatch", potatoPatch)
-      potatoBattle.textRects = function(battle)
-        local rects = potatoPatch.original(battle)
-        if potatoPatch.owns and potatoPatch.owns(battle) then return {} end
-        return rects
+  -- These voxel renderers draw their translucent glass rectangles before
+  -- BattleState.drawTextArea. Suppressing drawTextArea alone therefore leaves
+  -- a white/frosted block behind. Filter only their text-surface rectangles
+  -- while a Typed presentation owns the phase; enemy/player HUD rectangles
+  -- stay renderer-owned, and GAME commands/dialogue retain their panels.
+  local function installVoxelTextRectsPatch(modId, statusKey)
+    local battleModule = voxelBattleModule(modId)
+    if battleModule and type(battleModule.textRects) == "function" then
+      local patch = rawget(battleModule, "_typedMoveColorsTextRectsPatch")
+      if not patch then
+        patch = { original = battleModule.textRects }
+        rawset(battleModule, "_typedMoveColorsTextRectsPatch", patch)
+        battleModule.textRects = function(battle)
+          local rects = patch.original(battle)
+          if patch.owns and patch.owns(battle) then return {} end
+          return rects
+        end
       end
+      patch.owns = replacementPresentationOwnsPhase
+      inputPatch[statusKey] = true
+    else
+      inputPatch[statusKey] = false
     end
-    potatoPatch.owns = widePresentationOwnsPhase
-    inputPatch.potatoTextRectsPatched = true
-  else
-    inputPatch.potatoTextRectsPatched = false
   end
+  installVoxelTextRectsPatch("potato_voxel", "potatoTextRectsPatched")
+  installVoxelTextRectsPatch("DRAMATIC_SHAPE", "dramaticTextRectsPatched")
 
   local function moveDef(game, move)
     local id = type(move) == "table" and move.id or move
@@ -607,17 +650,27 @@ return function(mod)
   -- offset black shadow, pale outer rim, type-coloured face and a bright
   -- selection rail. Dense buttons retain the same hierarchy with one-pixel
   -- insets so the native 8px font still fits.
+  local function darkerTypeColor(color)
+    return {
+      math.floor(color[1] * 0.55 + 0.5),
+      math.floor(color[2] * 0.55 + 0.5),
+      math.floor(color[3] * 0.55 + 0.5),
+    }
+  end
+
   local function drawButton(game, moveType, x, y, w, h, selected, dense,
-      content, detached)
+      content, detached, transparentSurface)
     local colors = colorsFor(game, moveType)
     local bold = setting("strength", "bold") == "bold"
-    -- Selected cards use the palette's ink shade rather than another type
-    -- shade. The black frame remains legible for pale types such as WATER,
-    -- ICE and NORMAL, where the old light rim blended into the selected face.
+    -- Normal cards use black text. Selection inverts that relationship with
+    -- white text on a deliberately darkened type face, a thicker black frame
+    -- and a white rail. This remains obvious even when two neighbouring types
+    -- have similar colours or the user has reduced card opacity.
     local rim = colors[selected and 4 or 2]
-    local face = colors[selected and 2 or (bold and 3 or 2)]
-    local foreground = colors[selected and 4 or (bold and 1 or 4)]
-    local inset = dense and 1 or 2
+    local face = selected and darkerTypeColor(colors[3])
+      or colors[bold and 3 or 2]
+    local foreground = colors[selected and 1 or 4]
+    local inset = dense and 1 or (selected and 3 or 2)
     local shadow = dense and 1 or 2
     local cut = dense and 1 or math.min(3, math.floor(h / 3))
 
@@ -632,14 +685,19 @@ return function(mod)
     -- The engine's original move text and cursor are still underneath this
     -- additive overlay. Clear the exact footprint first so neither can peek
     -- through a button's deliberately transparent chamfer corners.
-    if not detached then clearRegion(game, x, y, w, h) end
-    local opacity = detached and detachedOpacity() or 1
+    if not detached and not transparentSurface then
+      clearRegion(game, x, y, w, h)
+    end
+    local opacity = (detached or transparentSurface)
+      and detachedOpacity() or 1
     if opacity < 1 then
       -- Nested translucent fills compound into an almost opaque centre. In
       -- adjustable-alpha mode the face is therefore one fill and the shadow
       -- and rim become outlines. The selected rail remains translucent too,
       -- while content restores full opacity for legibility.
-      if love.graphics.setLineWidth then love.graphics.setLineWidth(1) end
+      if love.graphics.setLineWidth then
+        love.graphics.setLineWidth(selected and 2 or 1)
+      end
       setInkColor(colors[4], opacity * 0.7)
       chamfer("line", x + shadow, y + shadow,
         w - shadow, h - shadow, cut)
@@ -660,7 +718,7 @@ return function(mod)
     end
 
     if selected then
-      setInkColor(colors[3], opacity)
+      setInkColor(colors[1], opacity)
       love.graphics.rectangle("fill", x + inset, y + inset + 1,
         dense and 1 or 2,
         math.max(1, h - shadow - inset * 2 - 2))
@@ -691,11 +749,12 @@ return function(mod)
     end
 
     local wide = engineWide(battle)
-    if not wide and phase == "moveSelect" then
+    local transparentSurface = not wide and customBattleSurface(battle)
+    if not wide and phase == "moveSelect" and not transparentSurface then
       -- Replace the cramped lower half of the native list with four full-
       -- width buttons. The TYPE/PP panel immediately above remains native.
       clearRegion(battle.game, 0, 104, 160, 40)
-    elseif not wide then
+    elseif not wide and not transparentSurface then
       -- Mimic's original narrow box has the same four-row constraint but no
       -- details panel, so its modal buttons can use the complete width.
       clearRegion(battle.game, 0, 64, 160, 40)
@@ -722,11 +781,30 @@ return function(mod)
           function(foreground)
             drawInk(def.name or move.id, textX, textY,
               w - (textX - x) - 5, foreground)
-          end)
+          end, false, transparentSurface)
       end
     end
 
-    if not wide and phase == "moveSelect"
+    if transparentSurface and phase == "moveSelect" then
+      local selectedMove = moves[selected]
+      local selectedDef = selectedMove and moveDef(battle.game, selectedMove)
+      if selectedDef then
+        local detailText
+        if battle.player and battle.player.disabledSlot == selected then
+          detailText = Strings("disabled!")
+        else
+          local maxPP = (selectedDef.pp or 0)
+            + (selectedMove.ppUps or 0)
+              * math.floor((selectedDef.pp or 0) / 5)
+          detailText = (Strings("PP") .. " %d/%d")
+            :format(selectedMove.pp or 0, maxPP)
+        end
+        drawButton(battle.game, selectedDef.type, 4, 84, 76, 17,
+          false, false, function(foreground)
+            drawInk(detailText, 8, 89, 68, foreground)
+          end, false, true)
+      end
+    elseif not wide and phase == "moveSelect"
         and battle.player and battle.player.disabledSlot ~= selected then
       -- Preserve the native PP row and box, but remove its repeated TYPE/
       -- lines. The card colour already communicates type, and abbreviations
