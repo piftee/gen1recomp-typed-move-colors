@@ -32,8 +32,9 @@ from balance mods, renamed moves and newly registered moves are respected.
 
 ## Settings
 
-The following rows appear in the game's normal **OPTIONS** menu and in the
-mod's own options page:
+The game's normal **OPTIONS** menu contains one **TYPED MOVE COLORS → OPEN**
+entry. It opens a compact native submenu containing the following settings.
+The same settings also remain available on the mod's own options page:
 
 | Setting | Choices |
 | --- | --- |
@@ -41,7 +42,7 @@ mod's own options page:
 | Move Layout | Wide or game |
 | Move Effect | On or off |
 | Move Menus | On or off |
-| Move Tint | Bold or soft |
+| Move Tint | Soft, bold or vibrant |
 | Card Opacity | 100%, 85%, 70% or 55% |
 | Text Only | On or off |
 
@@ -109,10 +110,15 @@ the live customized touch-control layout and stays above the upper edge of the
 D-pad/A/B cluster. That control edge becomes the fallback when a custom battle
 renderer cannot provide the normal menu-row anchor.
 
-Bold mirrors Modern Party UI: unselected buttons use the strong type shade.
+Bold mirrors Modern Party UI: unselected buttons use the strong reference
+type shade. Vibrant keeps the same structure but uses more saturated colours
+for stronger type recognition on small and mobile displays; it also feeds the
+brighter move and selected-type ink used by Text Only. Soft keeps unselected
+faces on the lighter shade.
+
 The selected button uses a darker type face, white text, a thicker black frame
-and a white selection rail. Soft keeps unselected faces on the lighter shade
-while retaining the same unmistakable selected treatment.
+and a white selection rail. All three palettes retain that unmistakable
+selected treatment.
 
 ## Type palette mapping
 
@@ -244,3 +250,6 @@ python3 tools/modkit.py pack typed_move_colors -o Typed-Move-Colors.zip
 The package contains no ROM-derived assets. Source code is available under the
 [MIT License](LICENSE). Pokémon and related names and imagery are trademarks of
 their respective owners; this is an unofficial fan-made mod.
+
+The compact settings submenu and Vibrant palette were contributed by Haseo,
+then adapted to preserve the current Text Only and renderer compatibility paths.

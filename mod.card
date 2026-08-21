@@ -22,8 +22,9 @@ return {
       "Translation-aware command/detail labels and stable nine-character details-card typography",
       "Optional arrow and circle effectiveness indicators on responsive battle move buttons",
       "Black normal labels and a white-on-dark selected card with a dominant focus frame",
+      "An optional higher-saturation Vibrant palette alongside the reference-derived Bold and lighter Soft styles",
       "Optional native-layout Text Only mode that links brighter move-name and selected-type ink without replacing boxes, cursors, PP values or input",
-      "Battle, layout, effectiveness, menu, tint-strength, opacity and text-only settings in the main Options screen",
+      "One compact main Options entry opening all battle, layout, effectiveness, menu, tint, opacity and text-only settings",
     },
     known = {
       "Unknown custom types use the neutral Normal palette",
@@ -33,6 +34,7 @@ return {
   },
   credits = {
     { who = "Gen1Recomp", for_ = "mod platform, move data and palette renderer" },
+    { who = "Haseo", for_ = "settings submenu and Vibrant palette contribution" },
   },
   compat = { engine = ">=0.0.0-dev <1.0.0", modApi = 2 },
 }
