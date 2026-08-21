@@ -1,9 +1,10 @@
 # Typed Move Colors
 
-Typed Move Colors turns each move into a chamfered type-coloured button while
-retaining Pokémon Red, Blue and Yellow's original font and four-shade rendering. Its
-layered rim, offset shadow and high-contrast selected state mirror Modern
-Party UI's party cards, but the mod also works independently.
+Typed Move Colors can turn each move into a chamfered type-coloured button or
+leave the native interface intact and colour only its move-name text. Both
+presentations retain Pokémon Red, Blue and Yellow's original font. The default
+card mode uses a layered rim, offset shadow and high-contrast selected state
+inspired by Modern Party UI, but the mod also works independently.
 
 ## Install
 
@@ -42,6 +43,18 @@ mod's own options page:
 | Move Menus | On or off |
 | Move Tint | Bold or soft |
 | Card Opacity | 100%, 85%, 70% or 55% |
+| Text Only | On or off |
+
+Text Only defaults to **Off**. Turning it **On** restores the game or active
+renderer's original battle layout, boxes, cursors, PP/type panel, selection
+style and input behavior. The mod then redraws each move name in a brighter,
+paper-readable colour derived from that move's live type. The selected type
+value inside the native TYPE/PP panel uses the same colour, while `TYPE/`, PP
+values and disabled-state text remain native. Summary, move-learning and
+PP-item lists receive the name-only treatment. Normal and unknown custom types
+retain the native darkest ink shade. Move Battle and Move Menus continue to
+control whether their respective move names are coloured. Other card-specific
+settings have no visible effect while Text Only is on.
 
 Move Layout defaults to **Wide**. If Gen1Recomp is already using its wide
 battle renderer, the mod decorates that grid. Otherwise the mod adds a
@@ -144,6 +157,13 @@ Import a legally obtained canonical US Red, Blue or Yellow ROM on first launch.
 Typed Move Colors changes presentation only. It does not replace move records,
 effects, PP, damage, targeting or battle input. Mods that add or alter moves are
 resolved at draw time. Unknown custom types fall back to a neutral palette.
+
+Text Only is the maximum-compatibility mode for the vanilla interface. It
+does not claim or suppress custom battle panels, replace command/dialogue
+surfaces, remap movement, draw cards, or alter PP values. Its only addition to
+the native details panel is colouring the already-present selected type value.
+Custom final-resolution interfaces such as Gen 3 Inspired UI retain their
+complete presentation unchanged while this mode is enabled.
 
 The Wide setting never enables or replaces Gen1Recomp's battlefield renderer.
 Over an `OG` or custom-rendered battle, it stops the native command, dialogue,

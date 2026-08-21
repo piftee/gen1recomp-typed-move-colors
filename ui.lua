@@ -79,6 +79,10 @@ return function(mod)
     return value
   end
 
+  local function textOnlyMode()
+    return setting("text_only", false)
+  end
+
   local function gen3BattleUIActive(game)
     local ok, handle = pcall(mod.find, "gen3_battle_ui")
     if not ok or not handle then return false end
@@ -166,6 +170,7 @@ return function(mod)
   -- battles need: they keep their transparent 160px scene intact.
   local function detachedGrid(battle)
     return setting("layout", "wide") == "wide"
+      and not textOnlyMode()
       and not engineWide(battle)
       and not gen3BattleUIActive(battle and battle.game)
       and detachedSurfaceFits()
@@ -212,6 +217,7 @@ return function(mod)
   inputPatch.gen3BattleUIActive = gen3BattleUIActive
   inputPatch.gen1ModernUIInstalled = gen1ModernUIInstalled
   inputPatch.detachedSurfaceFits = detachedSurfaceFits
+  inputPatch.textOnlyMode = textOnlyMode
 
   local function isTop(screen)
     local stack = screen and screen.game and screen.game.stack
@@ -219,7 +225,7 @@ return function(mod)
   end
 
   local function widePresentationOwnsPhase(battle)
-    if not setting("battle_colors", true) then return false end
+    if textOnlyMode() or not setting("battle_colors", true) then return false end
     local phase = battle and battle.phase
     local owned = phase == "moveSelect" or phase == "mimicSelect"
       or (phase == "menu" and not battle.safari and not battle.demo)
@@ -240,7 +246,7 @@ return function(mod)
   -- and Mimic phases, then draw the same compact geometry without an opaque
   -- cleanup pass. Commands and dialogue remain renderer-owned in GAME mode.
   local function compactPresentationOwnsPhase(battle)
-    if not setting("battle_colors", true)
+    if textOnlyMode() or not setting("battle_colors", true)
         or setting("layout", "wide") == "wide"
         or engineWide(battle) or not customBattleSurface(battle) then
       return false
@@ -357,6 +363,34 @@ return function(mod)
   end
   inputPatch.colorsFor = colorsFor
 
+  local function darkerTypeColor(color)
+    return {
+      math.floor(color[1] * 0.55 + 0.5),
+      math.floor(color[2] * 0.55 + 0.5),
+      math.floor(color[3] * 0.55 + 0.5),
+    }
+  end
+
+  local function brighterTextColor(color)
+    return {
+      math.floor(color[1] * 0.65 + 0.5),
+      math.floor(color[2] * 0.65 + 0.5),
+      math.floor(color[3] * 0.65 + 0.5),
+    }
+  end
+
+  -- Text-only mode needs ink that remains readable against the native paper
+  -- rather than the brighter fill used by a complete move card. Normal and
+  -- unknown custom types retain the native darkest ink shade.
+  local function textColorFor(game, moveType)
+    local colors = colorsFor(game, moveType)
+    if moveType == "NORMAL" or TYPE_COLORS[moveType] == nil then
+      return colors[4]
+    end
+    return brighterTextColor(colors[3])
+  end
+  inputPatch.textColorFor = textColorFor
+
   local rgb
 
   -- Effect indicators use the same merged chart as damage calculation and
@@ -468,6 +502,29 @@ return function(mod)
     end
     Font.draw(text, math.floor(x), math.floor(y))
     love.graphics.pop()
+  end
+
+  local function fitTextWithDot(text, maxWidth)
+    text = tostring(text or "")
+    if Font.width(text) <= maxWidth then return text end
+    local dot = "."
+    return fitText(text, math.max(0, maxWidth - Font.width(dot))) .. dot
+  end
+
+  -- Redraw exactly one native move-name or selected-type glyph run and
+  -- protect only its ink from the four-shade palette pass. No box, cursor,
+  -- PP value or input behavior is replaced in this mode.
+  local function drawTypedText(game, def, label, x, y, maxWidth, dotted)
+    if not def then return end
+    label = tostring(label or def.name or "")
+    if dotted and maxWidth then
+      label = fitTextWithDot(label, maxWidth)
+    end
+    local width = Font.width(label)
+    if maxWidth then width = math.min(width, maxWidth) end
+    if width <= 0 then return end
+    drawInk(label, x, y, width, textColorFor(game, def.type))
+    PaletteFX.markTrueColor(x, y, width, 8)
   end
 
   -- Summary rows have a complete top line available now that redundant type
@@ -646,18 +703,6 @@ return function(mod)
     battle:drawPicsLayer(slide, sx, sy, "player", true)
   end
 
-  -- Mirrors Modern Party UI's card hierarchy at the scale available here:
-  -- offset black shadow, pale outer rim, type-coloured face and a bright
-  -- selection rail. Dense buttons retain the same hierarchy with one-pixel
-  -- insets so the native 8px font still fits.
-  local function darkerTypeColor(color)
-    return {
-      math.floor(color[1] * 0.55 + 0.5),
-      math.floor(color[2] * 0.55 + 0.5),
-      math.floor(color[3] * 0.55 + 0.5),
-    }
-  end
-
   local function drawButton(game, moveType, x, y, w, h, selected, dense,
       content, detached, transparentSurface)
     local colors = colorsFor(game, moveType)
@@ -730,7 +775,7 @@ return function(mod)
   inputPatch.detachedOpacity = detachedOpacity
 
   local function renderBattle(battle)
-    if not setting("battle_colors", true) then return end
+    if textOnlyMode() or not setting("battle_colors", true) then return end
     if gen3BattleUIActive(battle and battle.game) then return end
     local phase = battle and battle.phase
     if phase ~= "moveSelect" and phase ~= "mimicSelect" then return end
@@ -813,11 +858,62 @@ return function(mod)
     end
   end
 
+  local function renderTextOnlyBattle(battle)
+    if not textOnlyMode() or not setting("battle_colors", true)
+        or gen3BattleUIActive(battle and battle.game) then
+      return
+    end
+    local phase = battle and battle.phase
+    if phase ~= "moveSelect" and phase ~= "mimicSelect" then return end
+    local moves = phase == "moveSelect"
+      and battle.player and battle.player.curMoves or battle.mimicMoves
+    if type(moves) ~= "table" then return end
+
+    local wide = engineWide(battle)
+    for i, move in ipairs(moves) do
+      local def = moveDef(battle.game, move)
+      if def then
+        local x, y, maxWidth, dotted
+        if wide then
+          local col = (i - 1) % 2
+          local row = math.floor((i - 1) / 2)
+          x, y, maxWidth, dotted = col == 0 and 16 or 120,
+            112 + row * 16, 96, true
+        elseif phase == "moveSelect" then
+          x, y = 48, 96 + i * 8
+        else
+          x, y = 16, (7 + i) * 8
+        end
+        drawTypedText(battle.game, def, def.name or move.id,
+          x, y, maxWidth, dotted)
+      end
+    end
+
+    -- The native details panel already identifies the selected move's type.
+    -- Colour only that value so players learn the type-to-colour association;
+    -- TYPE/, PP and disabled-state text remain native.
+    if phase == "moveSelect" then
+      local selected = moves[battle.moveIndex]
+      local def = selected and moveDef(battle.game, selected)
+      local disabled = battle.player
+        and battle.player.disabledSlot == battle.moveIndex
+      if def and (wide or not disabled) then
+        local label = TypeChart.displayName(def.type)
+        if wide then
+          drawTypedText(battle.game, def, label, 232, 128, 64, true)
+        else
+          drawTypedText(battle.game, def, label, 16, 80)
+        end
+      end
+    end
+  end
+
   -- A low-priority post-link draws before higher-priority post-overlays, so
   -- another mod's HUD or modal remains on top of these move chips.
   mod.hooks:wrap("battle.overlay", function(next, battle)
     next(battle)
     renderBattle(battle)
+    renderTextOnlyBattle(battle)
   end, -100)
 
   local function activeBattle(game)
@@ -1018,7 +1114,7 @@ return function(mod)
   -- beneath the player HUD, but may dock lower when the device bottom is
   -- already closer. Only the five chamfered cards cover the world.
   local function renderDetachedBattle(game, viewport)
-    if not setting("battle_colors", true) then return end
+    if textOnlyMode() or not setting("battle_colors", true) then return end
     local battle = activeBattle(game)
     if not battle or not widePresentationOwnsPhase(battle) then return end
     local phase = battle.phase
@@ -1225,7 +1321,7 @@ return function(mod)
   inputPatch.gen3MoveGeometry = gen3MoveGeometry
 
   local function renderGen3BattleColors(game)
-    if not setting("battle_colors", true)
+    if textOnlyMode() or not setting("battle_colors", true)
         or not gen3BattleUIActive(game) then return end
     local battle = activeBattle(game)
     if not (battle and battle.phase == "moveSelect"
@@ -1336,15 +1432,19 @@ return function(mod)
       local def = move and moveDef(game, move)
       if def then
         local y = 72 + (i - 1) * 16
-        drawButton(game, def.type, 8, y, 144, 15, false, true,
-          function(foreground)
-            drawFittedInk(def.name or move.id, 12, y, 138, foreground)
-            drawInk(Strings("PP"), 88, y + 7, 16, foreground)
-            local maxPP = (def.pp or 0)
-              + (move.ppUps or 0) * math.floor((def.pp or 0) / 5)
-            drawInk(("%2d/%2d"):format(move.pp or 0, maxPP),
-              110, y + 7, 40, foreground)
-          end)
+        if textOnlyMode() then
+          drawTypedText(game, def, def.name or move.id, 16, y)
+        else
+          drawButton(game, def.type, 8, y, 144, 15, false, true,
+            function(foreground)
+              drawFittedInk(def.name or move.id, 12, y, 138, foreground)
+              drawInk(Strings("PP"), 88, y + 7, 16, foreground)
+              local maxPP = (def.pp or 0)
+                + (move.ppUps or 0) * math.floor((def.pp or 0) / 5)
+              drawInk(("%2d/%2d"):format(move.pp or 0, maxPP),
+                110, y + 7, 40, foreground)
+            end)
+        end
       end
     end
   end
@@ -1357,10 +1457,14 @@ return function(mod)
       local def = moveDef(screen.game, move)
       if def then
         local y = (rowBase + i) * 8
-        drawButton(screen.game, def.type, 46, y, 106, 8,
-          i == screen.index, true, function(foreground)
-            drawInk(def.name or move.id, 48, y, 102, foreground)
-          end)
+        if textOnlyMode() then
+          drawTypedText(screen.game, def, def.name or move.id, 48, y)
+        else
+          drawButton(screen.game, def.type, 46, y, 106, 8,
+            i == screen.index, true, function(foreground)
+              drawInk(def.name or move.id, 48, y, 102, foreground)
+            end)
+        end
       end
     end
     -- Useful Move Info adds an inspect-only NEW MOVE row before CANCEL and
@@ -1376,10 +1480,15 @@ return function(mod)
         if Font.width(label) + Font.width(" NEW") <= 100 then
           label = label .. " NEW"
         end
-        drawButton(screen.game, def.type, 46, y, 106, 8,
-          screen.index == index, true, function(foreground)
-            drawInk(label, 48, y, 102, foreground)
-          end)
+        if textOnlyMode() then
+          drawTypedText(screen.game, def,
+            def.name or screen.newMoveId, 48, y)
+        else
+          drawButton(screen.game, def.type, 46, y, 106, 8,
+            screen.index == index, true, function(foreground)
+              drawInk(label, 48, y, 102, foreground)
+            end)
+        end
       end
     end
   end
@@ -1492,15 +1601,20 @@ return function(mod)
       if not item then break end
       if moveType then
         local y = 8 + row * 16
-        drawButton(screen.game, moveType, 12, y - 2, 142, 14,
-          i == screen.index, false, function(foreground)
-            drawInk(item.label, 18, y + 1,
-              item.right and 102 or 130, foreground)
-            if item.right then
-              local width = Font.width(item.right)
-              drawInk(item.right, 148 - width, y + 1, width, foreground)
-            end
-          end)
+        if textOnlyMode() then
+          drawTypedText(screen.game, { type = moveType },
+            item.label, 16, y)
+        else
+          drawButton(screen.game, moveType, 12, y - 2, 142, 14,
+            i == screen.index, false, function(foreground)
+              drawInk(item.label, 18, y + 1,
+                item.right and 102 or 130, foreground)
+              if item.right then
+                local width = Font.width(item.right)
+                drawInk(item.right, 148 - width, y + 1, width, foreground)
+              end
+            end)
+        end
       end
     end
   end

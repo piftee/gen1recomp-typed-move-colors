@@ -22,6 +22,8 @@ return function(mod)
         { "100%", "100" }, { "85%", "85" },
         { "70%", "70" }, { "55%", "55" },
       } },
+    { key = "text_only", label = "TEXT ONLY", type = "toggle",
+      default = false },
   }
   mod.options:define(optionSchema)
 
@@ -32,6 +34,7 @@ return function(mod)
     menu_colors = "MOVE MENUS",
     strength = "MOVE TINT",
     opacity = "CARD OPACITY",
+    text_only = "TEXT ONLY",
   }
 
   local function setOption(game, key, value)
