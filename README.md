@@ -47,13 +47,14 @@ mod's own options page:
 
 Text Only defaults to **Off**. Turning it **On** restores the game or active
 renderer's original battle layout, boxes, cursors, PP/type panel, selection
-style and input behavior. The mod then redraws only each move name in a dark,
-readable colour derived from that move's live type. It also uses this
-name-only treatment on the native summary, move-learning and PP-item lists.
-Normal and unknown custom types retain the native darkest ink shade. Move
-Battle and Move Menus continue to control whether their respective move names
-are coloured. Other card-specific settings have no visible effect while Text
-Only is on.
+style and input behavior. The mod then redraws each move name in a brighter,
+paper-readable colour derived from that move's live type. The selected type
+value inside the native TYPE/PP panel uses the same colour, while `TYPE/`, PP
+values and disabled-state text remain native. Summary, move-learning and
+PP-item lists receive the name-only treatment. Normal and unknown custom types
+retain the native darkest ink shade. Move Battle and Move Menus continue to
+control whether their respective move names are coloured. Other card-specific
+settings have no visible effect while Text Only is on.
 
 Move Layout defaults to **Wide**. If Gen1Recomp is already using its wide
 battle renderer, the mod decorates that grid. Otherwise the mod adds a
@@ -159,9 +160,10 @@ resolved at draw time. Unknown custom types fall back to a neutral palette.
 
 Text Only is the maximum-compatibility mode for the vanilla interface. It
 does not claim or suppress custom battle panels, replace command/dialogue
-surfaces, remap movement, draw cards, or alter PP and type labels. Custom
-final-resolution interfaces such as Gen 3 Inspired UI retain their complete
-presentation unchanged while this mode is enabled.
+surfaces, remap movement, draw cards, or alter PP values. Its only addition to
+the native details panel is colouring the already-present selected type value.
+Custom final-resolution interfaces such as Gen 3 Inspired UI retain their
+complete presentation unchanged while this mode is enabled.
 
 The Wide setting never enables or replaces Gen1Recomp's battlefield renderer.
 Over an `OG` or custom-rendered battle, it stops the native command, dialogue,

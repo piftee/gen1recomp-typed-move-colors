@@ -319,8 +319,8 @@ local battle = {
 current = battle
 
 -- TEXT ONLY is a maximum-compatibility presentation: all native geometry,
--- labels, cursors and input stay in charge while only the move-name glyphs
--- are redrawn with dark, readable type ink.
+-- labels, cursors and input stay in charge while move-name and selected-type
+-- glyphs are redrawn with brighter, readable type ink.
 rows[8].step(game, 1)
 T.eq(rows[8].value(game), "ON",
   "the main Options row enables text-only compatibility live")
@@ -338,22 +338,28 @@ T.eq(#buttonLayers, 0,
   "text-only mode draws no replacement card geometry")
 T.eq(#panels, 0,
   "text-only mode neither clears nor repaints native panel rectangles")
-T.eq(#marks, 4,
-  "text-only mode recolours exactly the four native move names")
+T.eq(#marks, 5,
+  "text-only mode recolours four move names and the selected type value")
 T.eq(marks[1].x, 48,
   "text-only battle ink starts at the native move-name column")
 T.eq(marks[1].y, 104,
   "text-only battle ink follows the native first move row")
 T.check(text[1] and text[1].value == "EMBER"
-    and text[1].color[1] == 140 / 255
-    and text[1].color[2] == 86 / 255
-    and text[1].color[3] == 47 / 255,
-  "Fire names use a dark readable form of the live Fire palette")
+    and text[1].color[1] == 165 / 255
+    and text[1].color[2] == 101 / 255
+    and text[1].color[3] == 55 / 255,
+  "Fire names use a brighter readable form of the live Fire palette")
 T.check(text[2] and text[2].value == "WATER GUN"
-    and text[2].color[1] == 42 / 255
-    and text[2].color[2] == 79 / 255
-    and text[2].color[3] == 118 / 255,
-  "Water names use a dark readable form of the live Water palette")
+    and text[2].color[1] == 50 / 255
+    and text[2].color[2] == 94 / 255
+    and text[2].color[3] == 139 / 255,
+  "Water names use a brighter readable form of the live Water palette")
+T.check(text[5] and text[5].value == "WATER"
+    and text[5].x == 16 and text[5].y == 80
+    and text[5].color[1] == text[2].color[1]
+    and text[5].color[2] == text[2].color[2]
+    and text[5].color[3] == text[2].color[3],
+  "the native TYPE/PP panel links the selected type word to its move colour")
 buttonLayers = {}
 Runtime.call("render.hud", function() end, game, {
   width = 1024, height = 768,
@@ -882,6 +888,20 @@ T.eq(buttonLayers[5].color[1], 0,
   "the selected button's outer rim uses the black ink shade")
 T.eq(marks[3].y, 124, "the third wide button starts the lower row")
 T.eq(marks[1].h, 16, "wide buttons have a full framed card height")
+
+rows[8].step(game, 1)
+panels, buttonLayers, marks, text = {}, {}, {}, {}
+Runtime.call("battle.overlay", function() end, battle)
+T.eq(#buttonLayers, 0,
+  "text-only mode leaves the native Wide move grid card-free")
+T.eq(#marks, 5,
+  "text-only Wide colours four names and its selected type value")
+T.eq(marks[1].x, 16,
+  "text-only Wide uses the native first move-name column")
+T.check(text[5] and text[5].value == "WATER"
+    and text[5].x == 232 and text[5].y == 128,
+  "text-only Wide colours the native selected-type details value")
+rows[8].step(game, 1)
 
 panels, buttonLayers, marks, text = {}, {}, {}, {}
 local summary = setmetatable({ game = game, page = 2,

@@ -371,6 +371,14 @@ return function(mod)
     }
   end
 
+  local function brighterTextColor(color)
+    return {
+      math.floor(color[1] * 0.65 + 0.5),
+      math.floor(color[2] * 0.65 + 0.5),
+      math.floor(color[3] * 0.65 + 0.5),
+    }
+  end
+
   -- Text-only mode needs ink that remains readable against the native paper
   -- rather than the brighter fill used by a complete move card. Normal and
   -- unknown custom types retain the native darkest ink shade.
@@ -379,7 +387,7 @@ return function(mod)
     if moveType == "NORMAL" or TYPE_COLORS[moveType] == nil then
       return colors[4]
     end
-    return darkerTypeColor(colors[3])
+    return brighterTextColor(colors[3])
   end
   inputPatch.textColorFor = textColorFor
 
@@ -503,11 +511,10 @@ return function(mod)
     return fitText(text, math.max(0, maxWidth - Font.width(dot))) .. dot
   end
 
-  -- Redraw exactly the native move-name glyphs and protect only their ink
-  -- from the four-shade palette pass. No box, cursor, PP, type label or input
-  -- behavior is replaced in this mode.
-  local function drawMoveTextOnly(game, def, label, x, y, maxWidth,
-      dotted)
+  -- Redraw exactly one native move-name or selected-type glyph run and
+  -- protect only its ink from the four-shade palette pass. No box, cursor,
+  -- PP value or input behavior is replaced in this mode.
+  local function drawTypedText(game, def, label, x, y, maxWidth, dotted)
     if not def then return end
     label = tostring(label or def.name or "")
     if dotted and maxWidth then
@@ -877,8 +884,26 @@ return function(mod)
         else
           x, y = 16, (7 + i) * 8
         end
-        drawMoveTextOnly(battle.game, def, def.name or move.id,
+        drawTypedText(battle.game, def, def.name or move.id,
           x, y, maxWidth, dotted)
+      end
+    end
+
+    -- The native details panel already identifies the selected move's type.
+    -- Colour only that value so players learn the type-to-colour association;
+    -- TYPE/, PP and disabled-state text remain native.
+    if phase == "moveSelect" then
+      local selected = moves[battle.moveIndex]
+      local def = selected and moveDef(battle.game, selected)
+      local disabled = battle.player
+        and battle.player.disabledSlot == battle.moveIndex
+      if def and (wide or not disabled) then
+        local label = TypeChart.displayName(def.type)
+        if wide then
+          drawTypedText(battle.game, def, label, 232, 128, 64, true)
+        else
+          drawTypedText(battle.game, def, label, 16, 80)
+        end
       end
     end
   end
@@ -1408,7 +1433,7 @@ return function(mod)
       if def then
         local y = 72 + (i - 1) * 16
         if textOnlyMode() then
-          drawMoveTextOnly(game, def, def.name or move.id, 16, y)
+          drawTypedText(game, def, def.name or move.id, 16, y)
         else
           drawButton(game, def.type, 8, y, 144, 15, false, true,
             function(foreground)
@@ -1433,7 +1458,7 @@ return function(mod)
       if def then
         local y = (rowBase + i) * 8
         if textOnlyMode() then
-          drawMoveTextOnly(screen.game, def, def.name or move.id, 48, y)
+          drawTypedText(screen.game, def, def.name or move.id, 48, y)
         else
           drawButton(screen.game, def.type, 46, y, 106, 8,
             i == screen.index, true, function(foreground)
@@ -1456,7 +1481,7 @@ return function(mod)
           label = label .. " NEW"
         end
         if textOnlyMode() then
-          drawMoveTextOnly(screen.game, def,
+          drawTypedText(screen.game, def,
             def.name or screen.newMoveId, 48, y)
         else
           drawButton(screen.game, def.type, 46, y, 106, 8,
@@ -1577,7 +1602,7 @@ return function(mod)
       if moveType then
         local y = 8 + row * 16
         if textOnlyMode() then
-          drawMoveTextOnly(screen.game, { type = moveType },
+          drawTypedText(screen.game, { type = moveType },
             item.label, 16, y)
         else
           drawButton(screen.game, moveType, 12, y - 2, 142, 14,

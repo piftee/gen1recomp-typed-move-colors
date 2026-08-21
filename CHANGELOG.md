@@ -3,8 +3,8 @@
 ## 0.4.0 - 2026-08-20
 
 - Added a Text Only option for maximum compatibility with the native battle UI and move-management menus.
-- When Text Only is enabled, leaves every native box, cursor, PP/type label, selection style, layout and input path unchanged while recolouring only the move-name glyphs from each move's live type.
-- Uses darker type-derived ink on native paper for readable Fire, Water, Grass and other type names; Normal and unknown custom types retain the native darkest ink shade.
+- When Text Only is enabled, leaves every native box, cursor, PP value, TYPE/ prompt, selection style, layout and input path unchanged while recolouring the move names and selected type value from each move's live type.
+- Uses brighter but paper-readable type-derived ink for Fire, Water, Grass and other type names; Normal and unknown custom types retain the native darkest ink shade.
 - Disables detached/compact card ownership, voxel panel suppression, Gen 3 panel tinting, command/dialogue replacement and two-by-two input remapping while Text Only is active.
 - Added regression coverage for native classic battle, summary, move-learning and PP-item text-only presentation.
 

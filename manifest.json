@@ -23,5 +23,5 @@
   "incompatible": [],
   "permissions": ["engine_internals"],
   "experimental": false,
-  "description": "Type-coloured move buttons or native-layout move-name text for battles and menus."
+  "description": "Type-coloured move buttons or native-layout move and selected-type text for battles and menus."
 }

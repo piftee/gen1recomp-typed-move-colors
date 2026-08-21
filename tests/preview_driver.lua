@@ -141,6 +141,6 @@ return function(game)
   game.save.options.battleLayout = "og"
   textOnly(true)
   U.wait(8)
-  U.log("PASS Text Only retains native battle UI with typed move-name ink")
+  U.log("PASS Text Only links brighter move-name and selected-type ink")
   U.shot(game, DIR .. "/typed_move_battle_text_only.png")
 end
