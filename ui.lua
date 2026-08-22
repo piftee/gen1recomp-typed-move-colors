@@ -157,9 +157,21 @@ return function(mod)
   end
 
   local function engineWide(battle)
-    if not (battle and battle.wideLayout) then return false end
-    local ok, wide = pcall(battle.wideLayout, battle)
-    return ok and wide and true or false
+    if not battle then return false end
+    -- Current engines expose wideLayout; earlier development builds used
+    -- isWideBattleLayout directly. Text Only must follow the layout that
+    -- actually drew the native labels or its colour pass lands in classic
+    -- columns over a wide two-column menu.
+    for _, name in ipairs({ "wideLayout", "isWideBattleLayout" }) do
+      local check = battle[name]
+      if type(check) == "function" then
+        local ok, wide = pcall(check, battle)
+        if ok then return wide and true or false end
+      end
+    end
+    local options = battle.game and battle.game.save
+      and battle.game.save.options
+    return options and options.battleLayout == "wide" or false
   end
 
   local function windowPixelRatio()
@@ -244,6 +256,7 @@ return function(mod)
   end
   inputPatch.detached = detachedGrid
   inputPatch.navigate = WideBattle.moveGridIndex
+  inputPatch.engineWide = engineWide
   inputPatch.gen3BattleUIActive = gen3BattleUIActive
   inputPatch.gen1ModernUIInstalled = gen1ModernUIInstalled
   inputPatch.detachedSurfaceFits = detachedSurfaceFits
@@ -1203,9 +1216,10 @@ return function(mod)
     end
     local nativeMoveY
     if viewport and tonumber(viewport.gameY) and tonumber(viewport.scale) then
-      -- Flat battles lift the controls to row 12, meeting the lower edge of
-      -- the Pokemon composition. Staged renderers keep their established row.
-      local nativeRow = customBattleSurface and 104 or 96
+      -- Start at the game's native control row, leaving the original eight-
+      -- pixel separation below the Pokemon field. This keeps scaled panels
+      -- from touching or slightly covering the player sprite.
+      local nativeRow = 104
       nativeMoveY = viewport.gameY * dpiY + nativeRow * viewport.scale
     end
     local layout = detachedLayout(screenW, screenH,

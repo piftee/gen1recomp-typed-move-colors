@@ -183,6 +183,14 @@ local layoutProbe = setmetatable({ game = { save = { options = {
 T.eq(BattleState.wideLayout(layoutProbe), false,
   "the mod does not alter the engine's battlefield renderer")
 local inputPatch = rawget(BattleState, "_typedMoveColorsInputPatch")
+T.eq(inputPatch.engineWide({
+  game = game,
+  isWideBattleLayout = function() return true end,
+}), true, "older engine wide-layout method remains recognised")
+game.save.options.battleLayout = "wide"
+T.eq(inputPatch.engineWide({ game = game }), true,
+  "saved wide layout is the final fallback for older battle objects")
+game.save.options.battleLayout = nil
 local fixedDetailScale, stockTypeScale = inputPatch.detailInkScales(
   "ELECTRIC", 90, 2.5)
 local sameFixedScale, longTypeScale = inputPatch.detailInkScales(
@@ -635,8 +643,8 @@ T.check((translations[1] and translations[1].x or 0) >= 112,
   "flat OG battle controls start inside the presented 160x144 battle area")
 T.check((translations[1].x + 392 * (scales[1] and scales[1].x or 0)) <= 912,
   "flat OG battle controls end inside the presented 160x144 battle area")
-T.eq(translations[1] and translations[1].y, 504,
-  "flat OG controls rise to meet the Pokemon composition at row 12")
+T.eq(translations[1] and translations[1].y, 544,
+  "flat OG controls begin below the Pokemon composition at native row 13")
 T.eq(scales[1] and scales[1].x, 2,
   "flat OG controls size from the battle area rather than the full window")
 T.eq((scales[1] and scales[1].x or 0)
@@ -864,8 +872,8 @@ local portraitHudOK, portraitHudErr = pcall(function()
 end)
 T.check(portraitHudOK,
   "portrait detached panel draws: " .. tostring(portraitHudErr))
-T.eq(translations[1] and translations[1].y, 1144,
-  "the rendered portrait panel rises to the Pokemon edge at row 12")
+T.eq(translations[1] and translations[1].y, 1184,
+  "the rendered portrait panel leaves the native gap below the Pokemon")
 
 battle.enemy.curTypes = { "GROUND" }
 T.eq(inputPatch.effectIndicator(battle, data.moves.FIX_ELECTRIC), "circle",
@@ -976,6 +984,8 @@ T.eq(marks[3].y, 124, "the third wide button starts the lower row")
 T.eq(marks[1].h, 16, "wide buttons have a full framed card height")
 
 rows[8].step(game, 1)
+battle.wideLayout = nil
+battle.isWideBattleLayout = function() return true end
 panels, buttonLayers, marks, text = {}, {}, {}, {}
 Runtime.call("battle.overlay", function() end, battle)
 T.eq(#buttonLayers, 0,
@@ -986,8 +996,10 @@ T.eq(marks[1].x, 16,
   "text-only Wide uses the native first move-name column")
 T.check(text[5] and text[5].value == "WATER"
     and text[5].x == 232 and text[5].y == 128,
-  "text-only Wide colours the native selected-type details value")
+  "text-only Wide colours native details correctly on older engines")
 rows[8].step(game, 1)
+battle.isWideBattleLayout = nil
+battle.wideLayout = function() return true end
 
 panels, buttonLayers, marks, text = {}, {}, {}, {}
 local summary = setmetatable({ game = game, page = 2,

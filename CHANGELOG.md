@@ -7,6 +7,8 @@
 - Applied Vibrant consistently to card fills, Gen 3 UI compatibility and Text Only move/type ink without changing any layout or renderer-ownership rules.
 - Kept the established black normal text and white-on-dark selected treatment as the accessibility-safe default rather than exposing combinations that can make bright or dark cards unreadable.
 - Adapted and credited Haseo's contributed submenu and Vibrant-palette work for the current Text Only and voxel-compatible codebase.
+- Recognised both current and earlier engine wide-layout APIs in Text Only mode, preventing coloured move names from being redrawn in classic columns over a native wide menu.
+- Lowered flat/original-UI replacement controls to the native row-13 boundary so scaled panels leave the intended gap below Pokémon sprites instead of touching or covering them.
 
 ## 0.4.0 - 2026-08-20
 

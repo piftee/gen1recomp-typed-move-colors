@@ -72,7 +72,8 @@ it stays within roughly the bottom third and makes the cards wider at the
 smaller scale, so it still uses the available width without becoming too tall.
 Device safe areas are respected. In flat/OG battles—including WORLD
 backgrounds—the cards stay inside the exact presented 160x144 battle rectangle
-and meet the lower edge of the Pokémon composition. Staged renderers such as
+and start at the native control row beneath the Pokémon composition, retaining
+the original eight-pixel separation at native scale. Staged renderers such as
 Battle Art retain the wider window-space presentation that follows their own
 canvas. Pokémon with one or two moves use full-height buttons; three or four
 moves use the two-by-two grid. The background, sprites and battle HUD remain
@@ -104,8 +105,8 @@ treatment; 85%, 70% and 55% let WORLD, voxel and other staged battle scenery
 show through the faces and frames. It does not alter summary screens,
 move-learning menus or Gen 3 UI-owned panels.
 
-On tall mobile displays, the responsive selector follows the lower edge of the
-Pokémon composition, directly beneath the player's HUD. It also reads
+On tall mobile displays, the responsive selector follows the native control
+row immediately below the Pokémon composition. It also reads
 the live customized touch-control layout and stays above the upper edge of the
 D-pad/A/B cluster. That control edge becomes the fallback when a custom battle
 renderer cannot provide the normal menu-row anchor.
