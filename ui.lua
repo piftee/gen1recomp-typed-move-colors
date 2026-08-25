@@ -51,6 +51,36 @@ return function(mod)
     TYPE_COLORS[id] = typeRamp(base)
   end
 
+  -- Optional high-saturation fills contributed by Haseo. Bold remains the
+  -- reference-derived palette, while Vibrant gives small/mobile cards and
+  -- Text Only ink a stronger type association without replacing either of
+  -- the existing styles.
+  local VIBRANT_BASE_COLORS = {
+    NORMAL = { 135, 151, 171 },
+    FIGHTING = { 217, 36, 84 },
+    FLYING = { 107, 147, 233 },
+    POISON = { 165, 64, 211 },
+    GROUND = { 228, 96, 24 },
+    ROCK = { 212, 181, 111 },
+    BUG = { 137, 202, 20 },
+    GHOST = { 58, 82, 182 },
+    FIRE = { 255, 118, 24 },
+    WATER = { 32, 125, 225 },
+    GRASS = { 63, 198, 52 },
+    ELECTRIC = { 255, 208, 20 },
+    PSYCHIC_TYPE = { 255, 67, 76 },
+    ICE = { 74, 217, 193 },
+    DRAGON = { 24, 105, 215 },
+    DARK = { 90, 74, 108 },
+    FAIRY = { 248, 103, 240 },
+    STEEL = { 60, 140, 170 },
+  }
+
+  local VIBRANT_TYPE_COLORS = {}
+  for id, base in pairs(VIBRANT_BASE_COLORS) do
+    VIBRANT_TYPE_COLORS[id] = typeRamp(base)
+  end
+
   -- OG RED/BLUE and OG YELLOW are hardware palettes rather than the modern
   -- type set. Keep their established named-palette mapping when that display
   -- mode is selected; monochrome, inverted and Classic transformations are
@@ -127,9 +157,21 @@ return function(mod)
   end
 
   local function engineWide(battle)
-    if not (battle and battle.wideLayout) then return false end
-    local ok, wide = pcall(battle.wideLayout, battle)
-    return ok and wide and true or false
+    if not battle then return false end
+    -- Current engines expose wideLayout; earlier development builds used
+    -- isWideBattleLayout directly. Text Only must follow the layout that
+    -- actually drew the native labels or its colour pass lands in classic
+    -- columns over a wide two-column menu.
+    for _, name in ipairs({ "wideLayout", "isWideBattleLayout" }) do
+      local check = battle[name]
+      if type(check) == "function" then
+        local ok, wide = pcall(check, battle)
+        if ok then return wide and true or false end
+      end
+    end
+    local options = battle.game and battle.game.save
+      and battle.game.save.options
+    return options and options.battleLayout == "wide" or false
   end
 
   local function windowPixelRatio()
@@ -214,6 +256,7 @@ return function(mod)
   end
   inputPatch.detached = detachedGrid
   inputPatch.navigate = WideBattle.moveGridIndex
+  inputPatch.engineWide = engineWide
   inputPatch.gen3BattleUIActive = gen3BattleUIActive
   inputPatch.gen1ModernUIInstalled = gen1ModernUIInstalled
   inputPatch.detachedSurfaceFits = detachedSurfaceFits
@@ -357,7 +400,9 @@ return function(mod)
       colors = PaletteFX.pal(data, named)
         or PaletteFX.pal(data, "GRAYMON") or PaletteFX.GRAYS
     else
-      colors = TYPE_COLORS[moveType] or TYPE_COLORS.NORMAL
+      local palette = setting("strength", "bold") == "vibrant"
+        and VIBRANT_TYPE_COLORS or TYPE_COLORS
+      colors = palette[moveType] or palette.NORMAL
     end
     return PaletteFX.effectiveColors(colors) or colors
   end
@@ -706,14 +751,14 @@ return function(mod)
   local function drawButton(game, moveType, x, y, w, h, selected, dense,
       content, detached, transparentSurface)
     local colors = colorsFor(game, moveType)
-    local bold = setting("strength", "bold") == "bold"
+    local strong = setting("strength", "bold") ~= "soft"
     -- Normal cards use black text. Selection inverts that relationship with
     -- white text on a deliberately darkened type face, a thicker black frame
     -- and a white rail. This remains obvious even when two neighbouring types
     -- have similar colours or the user has reduced card opacity.
     local rim = colors[selected and 4 or 2]
     local face = selected and darkerTypeColor(colors[3])
-      or colors[bold and 3 or 2]
+      or colors[strong and 3 or 2]
     local foreground = colors[selected and 1 or 4]
     local inset = dense and 1 or (selected and 3 or 2)
     local shadow = dense and 1 or 2
@@ -1171,9 +1216,10 @@ return function(mod)
     end
     local nativeMoveY
     if viewport and tonumber(viewport.gameY) and tonumber(viewport.scale) then
-      -- Flat battles lift the controls to row 12, meeting the lower edge of
-      -- the Pokemon composition. Staged renderers keep their established row.
-      local nativeRow = customBattleSurface and 104 or 96
+      -- Start at the game's native control row, leaving the original eight-
+      -- pixel separation below the Pokemon field. This keeps scaled panels
+      -- from touching or slightly covering the player sprite.
+      local nativeRow = 104
       nativeMoveY = viewport.gameY * dpiY + nativeRow * viewport.scale
     end
     local layout = detachedLayout(screenW, screenH,
@@ -1340,7 +1386,7 @@ return function(mod)
     local listBottom = rect.y + rect.h - pad - infoH - 7 * unit
     local rowH = (listBottom - listTop - gap * 3) / 4
     local rowW = rect.w - pad * 2
-    local bold = setting("strength", "bold") == "bold"
+    local strong = setting("strength", "bold") ~= "soft"
     local selected = battle.moveIndex
     local selectedRect
     local infoTypeMask
@@ -1356,7 +1402,7 @@ return function(mod)
       if def then
         local colors = colorsFor(game, def.type)
         local focused = selected == i
-        local face = colors[focused and 2 or (bold and 3 or 2)]
+        local face = colors[focused and 2 or (strong and 3 or 2)]
         local y = listTop + (i - 1) * (rowH + gap)
         local inset = focused and 0 or 2 * unit
         love.graphics.setColor(rgb(face))
@@ -1375,7 +1421,7 @@ return function(mod)
     local selectedDef = selectedMove and moveDef(game, selectedMove)
     if selectedDef then
       local colors = colorsFor(game, selectedDef.type)
-      local face = colors[bold and 3 or 2]
+      local face = colors[strong and 3 or 2]
       local infoY = rect.y + rect.h - pad - infoH
       love.graphics.setColor(rgb(face))
       love.graphics.rectangle("fill", rect.x + pad, infoY,

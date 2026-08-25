@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.1 - 2026-08-21
+
+- Replaced the seven Typed Move Colors rows in the main Options screen with one `TYPED MOVE COLORS → OPEN` entry and a compact native submenu; it opens directly on older builds without the custom-screen registry, while the regular per-mod settings page remains available.
+- Added an optional Vibrant type palette with stronger Fire, Water, Grass, Electric and other type associations while retaining the existing reference-derived Bold palette as the default.
+- Applied Vibrant consistently to card fills, Gen 3 UI compatibility and Text Only move/type ink without changing any layout or renderer-ownership rules.
+- Kept the established black normal text and white-on-dark selected treatment as the accessibility-safe default rather than exposing combinations that can make bright or dark cards unreadable.
+- Adapted and credited Haseo's contributed submenu and Vibrant-palette work for the current Text Only and voxel-compatible codebase.
+- Recognised both current and earlier engine wide-layout APIs in Text Only mode, preventing coloured move names from being redrawn in classic columns over a native wide menu.
+- Lowered flat/original-UI replacement controls to the native row-13 boundary so scaled panels leave the intended gap below Pokémon sprites instead of touching or covering them.
+
 ## 0.4.0 - 2026-08-20
 
 - Added a Text Only option for maximum compatibility with the native battle UI and move-management menus.

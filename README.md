@@ -32,8 +32,9 @@ from balance mods, renamed moves and newly registered moves are respected.
 
 ## Settings
 
-The following rows appear in the game's normal **OPTIONS** menu and in the
-mod's own options page:
+The game's normal **OPTIONS** menu contains one **TYPED MOVE COLORS → OPEN**
+entry. It opens a compact native submenu containing the following settings.
+The same settings also remain available on the mod's own options page:
 
 | Setting | Choices |
 | --- | --- |
@@ -41,7 +42,7 @@ mod's own options page:
 | Move Layout | Wide or game |
 | Move Effect | On or off |
 | Move Menus | On or off |
-| Move Tint | Bold or soft |
+| Move Tint | Soft, bold or vibrant |
 | Card Opacity | 100%, 85%, 70% or 55% |
 | Text Only | On or off |
 
@@ -71,7 +72,8 @@ it stays within roughly the bottom third and makes the cards wider at the
 smaller scale, so it still uses the available width without becoming too tall.
 Device safe areas are respected. In flat/OG battles—including WORLD
 backgrounds—the cards stay inside the exact presented 160x144 battle rectangle
-and meet the lower edge of the Pokémon composition. Staged renderers such as
+and start at the native control row beneath the Pokémon composition, retaining
+the original eight-pixel separation at native scale. Staged renderers such as
 Battle Art retain the wider window-space presentation that follows their own
 canvas. Pokémon with one or two moves use full-height buttons; three or four
 moves use the two-by-two grid. The background, sprites and battle HUD remain
@@ -103,16 +105,21 @@ treatment; 85%, 70% and 55% let WORLD, voxel and other staged battle scenery
 show through the faces and frames. It does not alter summary screens,
 move-learning menus or Gen 3 UI-owned panels.
 
-On tall mobile displays, the responsive selector follows the lower edge of the
-Pokémon composition, directly beneath the player's HUD. It also reads
+On tall mobile displays, the responsive selector follows the native control
+row immediately below the Pokémon composition. It also reads
 the live customized touch-control layout and stays above the upper edge of the
 D-pad/A/B cluster. That control edge becomes the fallback when a custom battle
 renderer cannot provide the normal menu-row anchor.
 
-Bold mirrors Modern Party UI: unselected buttons use the strong type shade.
+Bold mirrors Modern Party UI: unselected buttons use the strong reference
+type shade. Vibrant keeps the same structure but uses more saturated colours
+for stronger type recognition on small and mobile displays; it also feeds the
+brighter move and selected-type ink used by Text Only. Soft keeps unselected
+faces on the lighter shade.
+
 The selected button uses a darker type face, white text, a thicker black frame
-and a white selection rail. Soft keeps unselected faces on the lighter shade
-while retaining the same unmistakable selected treatment.
+and a white selection rail. All three palettes retain that unmistakable
+selected treatment.
 
 ## Type palette mapping
 
@@ -244,3 +251,6 @@ python3 tools/modkit.py pack typed_move_colors -o Typed-Move-Colors.zip
 The package contains no ROM-derived assets. Source code is available under the
 [MIT License](LICENSE). Pokémon and related names and imagery are trademarks of
 their respective owners; this is an unofficial fan-made mod.
+
+The compact settings submenu and Vibrant palette were contributed by Haseo,
+then adapted to preserve the current Text Only and renderer compatibility paths.

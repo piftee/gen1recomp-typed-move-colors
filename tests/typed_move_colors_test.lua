@@ -73,38 +73,107 @@ T.eq(schema[3].label, "MOVE EFFECT",
   "the mod settings page uses the same Move Effect label")
 T.eq(schema[7].key, "text_only",
   "the mod settings page exposes the native text-only mode")
+T.eq(#schema[5].choices, 3,
+  "the tint setting retains Soft and Bold while adding Vibrant")
+T.eq(schema[5].choices[3][2], "vibrant",
+  "Vibrant is an independent palette rather than replacing Bold")
 
 local current
 local stack = {}
 function stack:top() return current end
+function stack:push(screen) current = screen end
+function stack:pop() current = nil end
+local optionWrites = 0
 local game = {
   data = run.data,
   save = { options = {} },
   mods = run.loader,
   stack = stack,
+  writeOptions = function() optionWrites = optionWrites + 1 end,
 }
 
-local rows = Runtime.call("ui.options.rows",
+local mainRows = Runtime.call("ui.options.rows",
   function(_, base) return base end, game, { { id = "text_speed" } })
-T.eq(#rows, 8, "the seven settings appear in the main Options menu")
-T.eq(rows[2].id, "typed_move_colors_battle_colors",
-  "battle colours are the first companion setting")
-T.eq(rows[3].id, "typed_move_colors_layout",
-  "the responsive move layout is exposed in the main Options menu")
+T.eq(#mainRows, 2, "the main Options menu gains one compact mod entry")
+T.eq(mainRows[2].id, "typed_move_colors_settings_open",
+  "the compact entry opens Typed Move Colors settings")
+T.eq(mainRows[2].value(game), "OPEN",
+  "the compact entry clearly advertises its submenu action")
+mainRows[2].activate(game)
+local settingsMenu = current
+T.check(settingsMenu and settingsMenu.screenId == "typed_move_colors:settings",
+  "the Options entry opens the registered native settings screen")
+T.eq(#settingsMenu.items, 8,
+  "the submenu contains all seven settings plus Cancel")
+
+local function findSettingItem(key)
+  local id = "typed_move_colors:" .. key
+  for index, item in ipairs(settingsMenu.items) do
+    if item.id == id then return item, index end
+  end
+  return nil
+end
+
+local function settingControl(key)
+  return {
+    id = "typed_move_colors:" .. key,
+    value = function()
+      local item = findSettingItem(key)
+      return item and item.right
+    end,
+    step = function(_, direction)
+      local amount = direction or 1
+      local button = amount < 0 and "left" or "right"
+      local previousInput = game.input
+      for _ = 1, math.abs(amount) do
+        local _, index = findSettingItem(key)
+        settingsMenu.index = index
+        game.input = {
+          wasPressed = function(_, candidate) return candidate == button end,
+          isDown = function() return false end,
+        }
+        settingsMenu:update(0)
+      end
+      game.input = previousInput
+      return true
+    end,
+  }
+end
+
+local rows = {
+  [2] = settingControl("battle_colors"),
+  [3] = settingControl("layout"),
+  [4] = settingControl("effect_hints"),
+  [5] = settingControl("menu_colors"),
+  [6] = settingControl("strength"),
+  [7] = settingControl("opacity"),
+  [8] = settingControl("text_only"),
+}
+
+for _, item in ipairs(settingsMenu.items) do
+  if item.right then
+    T.check(16 + Font.width(item.label) < 152 - Font.width(item.right),
+      "submenu label and value remain separated for " .. item.id)
+  end
+end
+T.eq(rows[2].id, "typed_move_colors:battle_colors",
+  "battle colours are the first submenu setting")
+T.eq(rows[3].id, "typed_move_colors:layout",
+  "the responsive move layout is exposed in the submenu")
 T.eq(rows[3].value(game), "WIDE",
   "the two-by-two widescreen battle layout is the mod default")
-T.eq(rows[4].id, "typed_move_colors_effect_hints",
-  "effectiveness hints are exposed in the main Options menu")
+T.eq(rows[4].id, "typed_move_colors:effect_hints",
+  "effectiveness hints are exposed in the submenu")
 T.eq(rows[4].value(game), "ON",
   "effectiveness hints are enabled by default")
 T.eq(rows[6].value(game), "BOLD",
   "the default tint matches Modern Party UI's card contrast")
-T.eq(rows[7].id, "typed_move_colors_opacity",
-  "detached battle-card opacity is exposed in the main Options menu")
+T.eq(rows[7].id, "typed_move_colors:opacity",
+  "detached battle-card opacity is exposed in the submenu")
 T.eq(rows[7].value(game), "100%",
   "battle cards remain solid by default")
-T.eq(rows[8].id, "typed_move_colors_text_only",
-  "text-only compatibility is exposed in the main Options menu")
+T.eq(rows[8].id, "typed_move_colors:text_only",
+  "text-only compatibility is exposed in the submenu")
 T.eq(rows[8].value(game), "OFF",
   "the existing card presentation remains the default")
 
@@ -114,6 +183,14 @@ local layoutProbe = setmetatable({ game = { save = { options = {
 T.eq(BattleState.wideLayout(layoutProbe), false,
   "the mod does not alter the engine's battlefield renderer")
 local inputPatch = rawget(BattleState, "_typedMoveColorsInputPatch")
+T.eq(inputPatch.engineWide({
+  game = game,
+  isWideBattleLayout = function() return true end,
+}), true, "older engine wide-layout method remains recognised")
+game.save.options.battleLayout = "wide"
+T.eq(inputPatch.engineWide({ game = game }), true,
+  "saved wide layout is the final fallback for older battle objects")
+game.save.options.battleLayout = nil
 local fixedDetailScale, stockTypeScale = inputPatch.detailInkScales(
   "ELECTRIC", 90, 2.5)
 local sameFixedScale, longTypeScale = inputPatch.detailInkScales(
@@ -124,9 +201,12 @@ T.eq(stockTypeScale, fixedDetailScale,
   "all stock eight-character type names use the same stable scale")
 T.check(longTypeScale < fixedDetailScale,
   "only custom type names beyond nine characters shrink further")
+local writesBeforeOpacity = optionWrites
 rows[7].step(game, -1)
 T.eq(rows[7].value(game), "55%",
   "card opacity can be reduced for voxel and world backgrounds")
+T.eq(optionWrites, writesBeforeOpacity + 1,
+  "submenu changes are persisted immediately")
 T.eq(inputPatch.detachedOpacity(), 0.55,
   "the lowest opacity choice resolves to its exact alpha")
 rows[7].step(game, 1) -- restore 100% for baseline drawing checks
@@ -213,6 +293,20 @@ for typeId, expected in pairs(referenceColors) do
       and actual[3] == expected[3],
     typeId .. " uses the exact supplied reference colour")
 end
+rows[6].step(game, 1)
+T.eq(rows[6].value(game), "VIBRANT",
+  "the contributed Vibrant palette is selectable from the submenu")
+local vibrantFire = inputPatch.colorsFor(game, "FIRE")[3]
+T.check(vibrantFire[1] == 255 and vibrantFire[2] == 118
+    and vibrantFire[3] == 24,
+  "Vibrant Fire uses the stronger contributed orange-red fill")
+local vibrantFireInk = inputPatch.textColorFor(game, "FIRE")
+T.check(vibrantFireInk[1] == 166 and vibrantFireInk[2] == 77
+    and vibrantFireInk[3] == 16,
+  "Text Only derives its readable Fire ink from the Vibrant palette")
+rows[6].step(game, -1)
+T.eq(rows[6].value(game), "BOLD",
+  "Bold remains available as the reference-derived default")
 local selectedFire = inputPatch.colorsFor(game, "FIRE")[2]
 T.check(selectedFire[1] == 254 and selectedFire[2] == 186
     and selectedFire[3] == 136,
@@ -549,8 +643,8 @@ T.check((translations[1] and translations[1].x or 0) >= 112,
   "flat OG battle controls start inside the presented 160x144 battle area")
 T.check((translations[1].x + 392 * (scales[1] and scales[1].x or 0)) <= 912,
   "flat OG battle controls end inside the presented 160x144 battle area")
-T.eq(translations[1] and translations[1].y, 504,
-  "flat OG controls rise to meet the Pokemon composition at row 12")
+T.eq(translations[1] and translations[1].y, 544,
+  "flat OG controls begin below the Pokemon composition at native row 13")
 T.eq(scales[1] and scales[1].x, 2,
   "flat OG controls size from the battle area rather than the full window")
 T.eq((scales[1] and scales[1].x or 0)
@@ -778,8 +872,8 @@ local portraitHudOK, portraitHudErr = pcall(function()
 end)
 T.check(portraitHudOK,
   "portrait detached panel draws: " .. tostring(portraitHudErr))
-T.eq(translations[1] and translations[1].y, 1144,
-  "the rendered portrait panel rises to the Pokemon edge at row 12")
+T.eq(translations[1] and translations[1].y, 1184,
+  "the rendered portrait panel leaves the native gap below the Pokemon")
 
 battle.enemy.curTypes = { "GROUND" }
 T.eq(inputPatch.effectIndicator(battle, data.moves.FIX_ELECTRIC), "circle",
@@ -890,6 +984,8 @@ T.eq(marks[3].y, 124, "the third wide button starts the lower row")
 T.eq(marks[1].h, 16, "wide buttons have a full framed card height")
 
 rows[8].step(game, 1)
+battle.wideLayout = nil
+battle.isWideBattleLayout = function() return true end
 panels, buttonLayers, marks, text = {}, {}, {}, {}
 Runtime.call("battle.overlay", function() end, battle)
 T.eq(#buttonLayers, 0,
@@ -900,8 +996,10 @@ T.eq(marks[1].x, 16,
   "text-only Wide uses the native first move-name column")
 T.check(text[5] and text[5].value == "WATER"
     and text[5].x == 232 and text[5].y == 128,
-  "text-only Wide colours the native selected-type details value")
+  "text-only Wide colours native details correctly on older engines")
 rows[8].step(game, 1)
+battle.isWideBattleLayout = nil
+battle.wideLayout = function() return true end
 
 panels, buttonLayers, marks, text = {}, {}, {}, {}
 local summary = setmetatable({ game = game, page = 2,
@@ -1030,11 +1128,18 @@ local comboGame = {
   data = combined.data,
   save = { options = {} },
   mods = combined.loader,
+  stack = { push = function() end },
 }
 local comboRows = Runtime.call("ui.options.rows",
   function(_, base) return base end, comboGame, { { id = "text_speed" } })
-T.eq(#comboRows, 16,
-  "both companions expose all fifteen settings in the main Options menu")
+local typedComboRows = 0
+for _, row in ipairs(comboRows) do
+  if tostring(row.id):match("^typed_move_colors") then
+    typedComboRows = typedComboRows + 1
+  end
+end
+T.eq(typedComboRows, 1,
+  "Modern Party UI composes with one compact Typed Move Colors entry")
 T.check(combined.data.screens and combined.data.screens.PartyMenu ~= nil,
   "Modern Party UI retains sole ownership of the party screen")
 combined.release()
