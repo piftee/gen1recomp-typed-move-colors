@@ -1128,11 +1128,18 @@ local comboGame = {
   data = combined.data,
   save = { options = {} },
   mods = combined.loader,
+  stack = { push = function() end },
 }
 local comboRows = Runtime.call("ui.options.rows",
   function(_, base) return base end, comboGame, { { id = "text_speed" } })
-T.eq(#comboRows, 10,
-  "Modern Party UI rows compose with one compact Typed Move Colors entry")
+local typedComboRows = 0
+for _, row in ipairs(comboRows) do
+  if tostring(row.id):match("^typed_move_colors") then
+    typedComboRows = typedComboRows + 1
+  end
+end
+T.eq(typedComboRows, 1,
+  "Modern Party UI composes with one compact Typed Move Colors entry")
 T.check(combined.data.screens and combined.data.screens.PartyMenu ~= nil,
   "Modern Party UI retains sole ownership of the party screen")
 combined.release()

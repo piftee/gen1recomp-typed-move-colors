@@ -2,7 +2,7 @@
 
 ## 0.4.1 - 2026-08-21
 
-- Replaced the seven Typed Move Colors rows in the main Options screen with one `TYPED MOVE COLORS → OPEN` entry and a compact native submenu; the regular per-mod settings page remains available.
+- Replaced the seven Typed Move Colors rows in the main Options screen with one `TYPED MOVE COLORS → OPEN` entry and a compact native submenu; it opens directly on older builds without the custom-screen registry, while the regular per-mod settings page remains available.
 - Added an optional Vibrant type palette with stronger Fire, Water, Grass, Electric and other type associations while retaining the existing reference-derived Bold palette as the default.
 - Applied Vibrant consistently to card fills, Gen 3 UI compatibility and Text Only move/type ink without changing any layout or renderer-ownership rules.
 - Kept the established black normal text and white-on-dark selected treatment as the accessibility-safe default rather than exposing combinations that can make bright or dark cards unreadable.

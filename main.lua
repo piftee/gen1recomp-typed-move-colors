@@ -88,6 +88,11 @@ return function(mod)
   -- settings page still reads optionSchema directly, while this native list
   -- gives the main menu one entry instead of seven consecutive rows.
   local SETTINGS_SCREEN = "typed_move_colors:settings"
+  local ListMenu = mod.ui and mod.ui.ListMenu
+  if not (ListMenu and type(ListMenu.new) == "function") then
+    local ok, module = pcall(require, "src.ui.ListMenu")
+    if ok and type(module) == "table" then ListMenu = module end
+  end
 
   local function buildSubmenuItems()
     local items = {}
@@ -127,7 +132,7 @@ return function(mod)
         refresh(item.id)
       end
     end
-    menu = mod.ui.ListMenu.new(game, "TYPED MOVE COLORS", {}, {
+    menu = ListMenu.new(game, "TYPED MOVE COLORS", {}, {
       wrap = true,
       keyRepeat = true,
       onChoose = function(item, activeMenu)
@@ -149,27 +154,47 @@ return function(mod)
       end
       return baseUpdate(self, dt)
     end
+    menu.screenId = menu.screenId or SETTINGS_SCREEN
     return menu
   end
 
-  local submenuReady = mod.content and mod.content.screens
-    and mod.content.screens.register and mod.ui and mod.ui.ListMenu
-    and mod.ui.ListMenu.new and mod.ui.push
-  if submenuReady then
+  local screenRegistryReady = ListMenu and mod.content
+    and mod.content.screens and mod.content.screens.register
+  if screenRegistryReady then
     mod.content.screens:register(SETTINGS_SCREEN, {
       new = function(game) return newSettingsMenu(game) end,
     })
   end
 
+  local function openSettings(game)
+    local stack = game and game.stack
+    if not (ListMenu and stack and type(stack.push) == "function") then
+      return false
+    end
+    local ok, menu = pcall(newSettingsMenu, game)
+    if not ok or not menu then
+      mod.log:error("settings submenu failed: %s", tostring(menu))
+      return false
+    end
+    stack:push(menu)
+    return true
+  end
+
   mod.hooks:wrap("ui.options.rows", function(next, game, rows)
     local out = next(game, rows)
     if type(out) ~= "table" then return out end
+    local submenuReady = ListMenu and game and game.stack
+      and type(game.stack.push) == "function"
     if submenuReady then
       local openRow = {
         id = "typed_move_colors_settings_open",
         label = "TYPED MOVE COLORS",
         value = function() return "OPEN" end,
-        activate = function(g) mod.ui.push(g, SETTINGS_SCREEN) end,
+        -- Current OptionsMenu uses activate; older builds treated all rows
+        -- as steppers. Providing both keeps the single submenu entry on each
+        -- API generation without scattering the individual settings again.
+        activate = function(g) return openSettings(g) end,
+        step = function(g) return openSettings(g) end,
       }
       if mod.ui and type(mod.ui.insertBefore) == "function" then
         return mod.ui.insertBefore(out, "MODS", openRow)
