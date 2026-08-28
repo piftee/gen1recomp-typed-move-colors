@@ -220,6 +220,12 @@ return function(mod)
     return out
   end)
 
+  local GameVersion = require("src.core.GameVersion")
+  if type(GameVersion.generation) == "function"
+      and GameVersion.generation() == 2 then
+    return require("mods.typed_move_colors.gen2")(mod)
+  end
+
   local source, readErr = mod:read("ui.lua")
   if not source then
     mod.log:error("ui.lua is missing (%s); reinstall the mod",

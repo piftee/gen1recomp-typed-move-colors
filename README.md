@@ -6,6 +6,12 @@ presentations retain Pokémon Red, Blue and Yellow's original font. The default
 card mode uses a layered rim, offset shadow and high-contrast selected state
 inspired by Modern Party UI, but the mod also works independently.
 
+Gold, Silver, and Crystal use a dedicated 2×2 type-coloured move grid and
+summary swatches while the native Gen 2 move, PP, disable, and selection logic
+remains authoritative. Their selected-move panel contains only Power and PP;
+the buttons use the same optional effectiveness markers as Red, Blue and
+Yellow.
+
 ## Install
 
 1. Download the `.zip` from the
@@ -15,7 +21,7 @@ inspired by Modern Party UI, but the mod also works independently.
 3. Enable **Typed Move Colors**, then open your game.
 
 The ZIP contains only the mod. You still need your own legally obtained Pokémon
-Red, Blue, or Yellow ROM imported into
+Red, Blue, Yellow, Gold, Silver, or Crystal ROM imported into
 [Gen1Recomp](https://github.com/bryanthaboi/gen1recomp).
 
 ## Where colours appear

@@ -267,6 +267,25 @@ return function(mod)
     return not (stack and stack.top) or stack:top() == screen
   end
 
+  -- A move-learning controller can be pushed over a live staged battle.
+  -- Its native list is part of the 160x144 modal, while card geometry can be
+  -- composited through the underlying voxel surface at a different offset.
+  -- Keep that modal's native geometry and recolour only its existing ink.
+  local function stagedBattleBehind(screen)
+    local stack = screen and screen.game and screen.game.stack
+    local states = stack and stack.states
+    if type(states) ~= "table" then return false end
+    for i = #states - 1, 1, -1 do
+      local state = states[i]
+      if type(state) == "table"
+          and (rawget(state, "dramaticShapeShot") ~= nil
+          or state.letterboxWhite == false) then
+        return true
+      end
+    end
+    return false
+  end
+
   local function widePresentationOwnsPhase(battle)
     if textOnlyMode() or not setting("battle_colors", true) then return false end
     local phase = battle and battle.phase
@@ -298,9 +317,24 @@ return function(mod)
     return phase == "moveSelect" or phase == "mimicSelect"
   end
 
+  -- GAME uses the native selector footprint in ordinary 2D battles. Compact
+  -- type-coloured cards fit its four rows without extending below the 160x144
+  -- battle canvas. The oversized native TYPE/PP panel is replaced by a small
+  -- attached Power/PP card directly above those rows. Custom/transparent
+  -- renderers still use their paper-free compact surface.
+  local function nativeGamePresentation(battle)
+    return battle ~= nil
+      and not textOnlyMode()
+      and setting("battle_colors", true)
+      and setting("layout", "wide") ~= "wide"
+      and not engineWide(battle)
+      and not customBattleSurface(battle)
+  end
+
   local function replacementPresentationOwnsPhase(battle)
     return widePresentationOwnsPhase(battle)
       or compactPresentationOwnsPhase(battle)
+      or (nativeGamePresentation(battle) and battle.phase == "moveSelect")
   end
 
   inputPatch.trackPresentationBattle = function(battle)
@@ -340,9 +374,9 @@ return function(mod)
   -- what produced WORLD-shaped holes, retained RGB rectangles on translucent
   -- renderers, and the stray TYPE/PP slab visible with Fancy Battle/Battle
   -- Art. The wrapper is process-stable across mod reloads, like the input
-  -- patch above. Ordinary GAME mode still falls through unchanged; a staged
-  -- renderer's compact move phase is replaced without painting paper into
-  -- its transparent battle surface.
+  -- patch above. Ordinary GAME move selection suppresses its oversized native
+  -- panel before drawing the compact cards; a staged renderer's compact move
+  -- phase is replaced without painting paper into its transparent surface.
   local textPatch = rawget(BattleState, "_typedMoveColorsTextPatch")
   if not textPatch then
     textPatch = { original = BattleState.drawTextArea }
@@ -355,9 +389,11 @@ return function(mod)
   textPatch.owns = replacementPresentationOwnsPhase
   inputPatch.widePresentationOwnsPhase = widePresentationOwnsPhase
   inputPatch.compactPresentationOwnsPhase = compactPresentationOwnsPhase
+  inputPatch.nativeGamePresentation = nativeGamePresentation
   inputPatch.replacementPresentationOwnsPhase =
     replacementPresentationOwnsPhase
   inputPatch.customBattleSurface = customBattleSurface
+  inputPatch.stagedBattleBehind = stagedBattleBehind
 
   -- These voxel renderers draw their translucent glass rectangles before
   -- BattleState.drawTextArea. Suppressing drawTextArea alone therefore leaves
@@ -749,7 +785,7 @@ return function(mod)
   end
 
   local function drawButton(game, moveType, x, y, w, h, selected, dense,
-      content, detached, transparentSurface)
+      content, detached, transparentSurface, skipClear)
     local colors = colorsFor(game, moveType)
     local strong = setting("strength", "bold") ~= "soft"
     -- Normal cards use black text. Selection inverts that relationship with
@@ -772,10 +808,11 @@ return function(mod)
       cut = math.min(3, math.floor(h / 3))
     end
 
-    -- The engine's original move text and cursor are still underneath this
-    -- additive overlay. Clear the exact footprint first so neither can peek
-    -- through a button's deliberately transparent chamfer corners.
-    if not detached and not transparentSurface then
+    -- When native geometry remains underneath this additive overlay, clear
+    -- its exact footprint so text and cursors cannot peek through chamfered
+    -- corners. Fully owned replacement surfaces have already suppressed that
+    -- geometry and must not receive a rectangular paper-colour backing.
+    if not detached and not transparentSurface and not skipClear then
       clearRegion(game, x, y, w, h)
     end
     local opacity = (detached or transparentSurface)
@@ -815,7 +852,27 @@ return function(mod)
     end
 
     content(foreground)
-    if not detached then PaletteFX.markTrueColor(x, y, w, h) end
+    if not detached then
+      if skipClear then
+        -- A full rectangular true-colour mark re-blits the paper pixels in
+        -- the chamfered corners after a WORLD/keyed composition has removed
+        -- them, producing a white block even though no explicit clear ran.
+        -- Two inscribed rectangles cover the card ink without ever including
+        -- its four outside corners. The dark shadow may follow the display
+        -- palette; the face, rim, selection rail and text remain true-colour.
+        local markW, markH = w - shadow, h - shadow
+        if markW > cut * 2 and markH > 0 then
+          PaletteFX.markTrueColor(x + cut, y,
+            markW - cut * 2, markH)
+        end
+        if markW > 0 and markH > cut * 2 then
+          PaletteFX.markTrueColor(x, y + cut,
+            markW, markH - cut * 2)
+        end
+      else
+        PaletteFX.markTrueColor(x, y, w, h)
+      end
+    end
   end
   inputPatch.detachedOpacity = detachedOpacity
 
@@ -840,7 +897,9 @@ return function(mod)
 
     local wide = engineWide(battle)
     local transparentSurface = not wide and customBattleSurface(battle)
-    if not wide and phase == "moveSelect" and not transparentSurface then
+    local nativeGame = nativeGamePresentation(battle)
+    if not wide and phase == "moveSelect" and not transparentSurface
+        and not nativeGame then
       -- Replace the cramped lower half of the native list with four full-
       -- width buttons. The TYPE/PP panel immediately above remains native.
       clearRegion(battle.game, 0, 104, 160, 40)
@@ -860,6 +919,9 @@ return function(mod)
           x, y, w, h = col == 0 and 4 or 110,
             106 + row * 18, col == 0 and 104 or 110, 16
           textX, textY, dense = x + 4, y + 4, false
+        elseif nativeGame and phase == "moveSelect" then
+          x, y, w, h = 4, 104 + (i - 1) * 8, 152, 8
+          textX, textY, dense = 12, y, true
         else
           x, y, w, h = 4,
             (phase == "moveSelect" and 104 or 64) + (i - 1) * 10,
@@ -871,11 +933,48 @@ return function(mod)
           function(foreground)
             drawInk(def.name or move.id, textX, textY,
               w - (textX - x) - 5, foreground)
-          end, false, transparentSurface)
+          end, false, transparentSurface,
+          nativeGame and phase == "moveSelect")
       end
     end
 
-    if transparentSurface and phase == "moveSelect" then
+    if nativeGame and phase == "moveSelect" then
+      -- The native picture clip removes rows 8+ before this overlay runs.
+      -- Draw the replacement sprite after the move rows: drawing it before
+      -- the card pass lets later UI work expose the clipped white field
+      -- again. The compact details card is painted last, over the sprite.
+      restoreDetachedPlayerPic(battle)
+      local selectedMove = moves[selected]
+      local selectedDef = selectedMove and moveDef(battle.game, selectedMove)
+      local disabled = battle.player
+        and battle.player.disabledSlot == selected
+      if selectedDef then
+        -- A single attached card keeps the useful values visually connected
+        -- to the move rows. Its colour already communicates type, so no type
+        -- label is repeated here. skipClear prevents a paper rectangle from
+        -- being painted behind the chamfered card.
+        drawButton(battle.game, selectedDef.type, 4, 78, 76, 25,
+          false, false, function(foreground)
+            if disabled then
+              drawFittedInk(Strings("disabled!"), 8, 86, 68, foreground)
+              return
+            end
+            local hasPower = type(selectedDef.power) == "number"
+              and selectedDef.power > 0
+            local maxPP = (selectedDef.pp or 0)
+              + (selectedMove.ppUps or 0)
+                * math.floor((selectedDef.pp or 0) / 5)
+            local powerLine = hasPower
+              and (Strings("POWER") .. " "
+                .. tostring(math.floor(selectedDef.power)))
+              or Strings("STATUS")
+            drawFittedInk(powerLine, 8, 81, 68, foreground)
+            drawFittedInk((Strings("PP") .. " %d/%d")
+                :format(selectedMove.pp or 0, maxPP),
+              8, 90, 68, foreground)
+          end, false, false, true)
+      end
+    elseif transparentSurface and phase == "moveSelect" then
       local selectedMove = moves[selected]
       local selectedDef = selectedMove and moveDef(battle.game, selectedMove)
       if selectedDef then
@@ -1499,11 +1598,12 @@ return function(mod)
     if not setting("menu_colors", true) or not screen.selecting
         or not isTop(screen) then return end
     local rowBase = screen._typedMoveColorsUsefulInfo and 4 or 5
+    local nativeInkOnly = textOnlyMode() or stagedBattleBehind(screen)
     for i, move in ipairs(screen.mon and screen.mon.moves or {}) do
       local def = moveDef(screen.game, move)
       if def then
         local y = (rowBase + i) * 8
-        if textOnlyMode() then
+        if nativeInkOnly then
           drawTypedText(screen.game, def, def.name or move.id, 48, y)
         else
           drawButton(screen.game, def.type, 46, y, 106, 8,
@@ -1526,7 +1626,7 @@ return function(mod)
         if Font.width(label) + Font.width(" NEW") <= 100 then
           label = label .. " NEW"
         end
-        if textOnlyMode() then
+        if nativeInkOnly then
           drawTypedText(screen.game, def,
             def.name or screen.newMoveId, 48, y)
         else
