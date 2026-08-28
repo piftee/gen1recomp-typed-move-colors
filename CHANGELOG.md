@@ -1,5 +1,58 @@
 # Changelog
 
+## 0.4.7 - 2026-08-28
+
+- Fixed the original Gen 1 GAME layout so its coloured move rows no longer
+  expose a white backing rectangle or clip the player's battle sprite.
+- Restored a compact selected-move card with Power/Status and current/max PP,
+  with enough inner padding to keep both lines clear of its rim and shadow.
+- Kept status moves on a stable `STATUS` label instead of squeezing or
+  partially redrawing `POWER`.
+- Removed the redundant type name from Gen 2's selected-move information
+  panel; card colour continues to communicate the move type.
+- Added the existing RBY effectiveness markers to Gen 2 move buttons: one up
+  arrow for neutral damage, two for super-effective, down for resisted, and a
+  circle for status or immune moves.
+- Resolves markers from the opponent's live types and the merged Gen 2 type
+  chart, and respects the existing Move Effect option.
+
+## 0.4.6 - 2026-08-28
+
+- Restored the selected-move information card in Gen 2 without restoring the
+  native TYPE/PP window that covered the player Pokémon.
+- Matches the Red/Blue/Yellow presentation on wide screens: move buttons on
+  the left and a full Type, Power and current/max PP panel on the right.
+- Uses a compact Type/Power/PP strip entirely inside the lower control band on
+  square screens, leaving the battle field and both Pokémon unobstructed.
+- Removes redundant type and PP text from individual move buttons.
+
+## 0.4.5 - 2026-08-27
+
+- Fixed the root two-move bug: Gen 2 grid navigation now follows the visible
+  two-column cards even when the saved Move Layout preference is GAME.
+- Suppresses the complete native TYPE/PP move window while coloured cards own
+  selection, removing its overlap with the player sprite on square screens.
+
+## 0.4.4 - 2026-08-27
+
+- Reattaches Gen 2 grid input from the live battle-overlay path if an older
+  Silver controller replaces or bypasses the screen-push update wrapper.
+- Added explicit two-move coverage: the first-row cards switch with Left and
+  Right, while Up and Down correctly remain on that only populated row.
+
+## 0.4.3 - 2026-08-27
+
+- Made Gen 2 two-by-two move navigation independent of the newer battle-grid
+  hook, so Left/Right also work on earlier API 2 Silver builds.
+- Recognised both released Gen 2 move-phase names and both native move-list
+  shapes without replacing move selection, PP, swapping or execution.
+
+## 0.4.2 - 2026-08-27
+
+- Gen 2 battle move cards now enforce 2x2 directional navigation directly on
+  the finished battle controller as well as through the public hook, keeping
+  Left/Right working on earlier API 2 Gen 2 builds.
+
 ## 0.4.1 - 2026-08-21
 
 - Replaced the seven Typed Move Colors rows in the main Options screen with one `TYPED MOVE COLORS → OPEN` entry and a compact native submenu; it opens directly on older builds without the custom-screen registry, while the regular per-mod settings page remains available.

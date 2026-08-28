@@ -405,6 +405,7 @@ local battle = {
       slide = slide, sx = sx, sy = sy,
       onlySide = onlySide, skipMenuClip = skipMenuClip,
     }
+    self.buttonLayersAtPlayerRestore = #buttonLayers
   end,
   drawHUDs = function(self, slide)
     self.restoredPlayerHud = { slide = slide }
@@ -901,24 +902,89 @@ T.eq(#buttonLayers, 15,
 rows[4].step(game, 1) -- restore effect hints
 battle.enemy.curTypes = { "GRASS" }
 
--- GAME restores the original compact overlay when the engine itself is OG.
+-- GAME fits compact type-coloured cards into the native selector rows, so
+-- Battle Fit: FILL cannot crop them from the lower edge of an ordinary 2D
+-- battle. A small attached details card restores Power and PP without the
+-- oversized native panel or a repeated type label.
 rows[3].step(game, 1)
 panels, buttonLayers, marks, text = {}, {}, {}, {}
 BattleState.drawTextArea(battle)
-T.check(#panels > 0,
-  "GAME mode leaves native move GUI drawing completely unchanged")
+T.eq(#panels, 0,
+  "GAME suppresses the oversized native move and TYPE/PP panels")
+T.eq(inputPatch.replacementPresentationOwnsPhase(battle), true,
+  "ordinary GAME move selection is owned by the compact presentation")
 panels, buttonLayers, marks, text = {}, {}, {}, {}
 local battleOK, battleErr = pcall(function()
   Runtime.call("battle.overlay", function() end, battle)
 end)
 T.check(battleOK, "classic battle colours draw: " .. tostring(battleErr))
-T.eq(#marks, 4, "every battle move receives one protected colour chip")
-T.eq(#buttonLayers, 12,
-  "each classic move button has shadow, rim and face layers")
-T.eq(marks[1].x, 4, "classic buttons use the available full width")
-T.eq(marks[1].y, 104, "classic chips follow the first move row")
-T.eq(marks[1].w, 152, "classic buttons retain complete move names")
-T.eq(marks[2].y, 114, "classic selection follows the live move index")
+T.eq(inputPatch.nativeGamePresentation(battle), true,
+  "ordinary OG battles use the native GAME presentation")
+T.eq(battle.buttonLayersAtPlayerRestore, 12,
+  "GAME restores the complete player sprite after all four move cards")
+T.eq(#buttonLayers, 15,
+  "ordinary GAME battles draw four move cards and one details card")
+T.eq(#marks, 10,
+  "GAME uses two corner-safe true-colour marks per card")
+T.eq(marks[1].x, 5,
+  "GAME first card's vertical mark omits chamfered corners")
+T.eq(marks[1].y, 104,
+  "GAME first card follows the native first move row")
+T.eq(marks[2].x, 4,
+  "GAME first card's horizontal mark stays inside its face")
+T.eq(marks[3].y, 112,
+  "GAME second card uses the next native row")
+T.eq(marks[7].y, 128,
+  "GAME fourth card remains above the 144-line battle edge")
+local sawDetailsPaperBacking = false
+for _, panel in ipairs(panels) do
+  if panel.x == 4 and panel.y == 78
+      and panel.w == 76 and panel.h == 25 then
+    sawDetailsPaperBacking = true
+  end
+end
+T.eq(sawDetailsPaperBacking, false,
+  "GAME details card has no rectangular white paper backing")
+local detailsRims = 0
+for _, layer in ipairs(buttonLayers) do
+  if layer.points and layer.points[2] == 78 then
+    detailsRims = detailsRims + 1
+  end
+end
+T.eq(detailsRims, 1,
+  "GAME details draw one chamfered rim with no rectangular backing")
+T.eq(marks[9].x, 7,
+  "GAME details true-colour mark omits the upper chamfered corners")
+T.eq(marks[10].y, 81,
+  "GAME details true-colour mark omits the side chamfered corners")
+local sawCompactPower, sawCompactPP, sawRepeatedType = false, false, false
+for _, call in ipairs(text) do
+  if call.value == "POWER 40" then sawCompactPower = true end
+  if call.value == "PP 18/25" then sawCompactPP = true end
+  if call.value == "WATER" then sawRepeatedType = true end
+end
+T.eq(sawCompactPower, true,
+  "GAME details restore the selected move's base power")
+T.eq(sawCompactPP, true,
+  "GAME details restore current and maximum PP")
+T.eq(sawRepeatedType, false,
+  "GAME details do not repeat the type represented by card colour")
+moves[2] = { id = "FIX_STATUS", pp = 39 }
+panels, buttonLayers, marks, text = {}, {}, {}, {}
+Runtime.call("battle.overlay", function() end, battle)
+sawCompactPower, sawRepeatedType = false, false
+for _, call in ipairs(text) do
+  if call.value == "STATUS" then sawCompactPower = true end
+  if type(call.value) == "string"
+      and call.value:find("POWER", 1, true) then
+    sawRepeatedType = true
+  end
+end
+T.eq(sawCompactPower, true,
+  "GAME details identify non-damaging moves with a stable STATUS label")
+T.eq(sawRepeatedType, false,
+  "GAME status details never squeeze or partially redraw POWER")
+moves[2] = { id = "FIX_WATER", pp = 18 }
 
 -- A staged renderer has transparent world pixels where the native paper box
 -- used to be. In GAME, replace only its compact move phase so cleanup cannot
@@ -926,6 +992,8 @@ T.eq(marks[2].y, 114, "classic selection follows the live move index")
 battle.dramaticShapeShot = { canvas = true }
 battle.letterboxWhite = false
 panels, buttonLayers, marks, text = {}, {}, {}, {}
+T.eq(inputPatch.nativeGamePresentation(battle), false,
+  "a staged transparent battle retains the compact card presentation")
 BattleState.drawTextArea(battle)
 T.eq(#panels, 0,
   "GAME suppresses the native move box on a transparent battle surface")
@@ -1216,6 +1284,25 @@ end
 T.check(sawNewMove,
   "the coloured added row keeps Useful Move Info's NEW label")
 
+-- When learning a move over an active staged battle, retain the companion's
+-- native modal geometry. Replacement cards can otherwise be composited at the
+-- underlying voxel surface's offset and appear above the original list.
+usefulStack.states = {
+  { dramaticShapeShot = { canvas = true }, letterboxWhite = false },
+  usefulLearn,
+}
+usefulMarks, buttonLayers = {}, {}
+PaletteFX.markTrueColor = function(x, y, w, h)
+  usefulMarks[#usefulMarks + 1] = { x = x, y = y, w = w, h = h }
+end
+usefulLearn:draw()
+PaletteFX.markTrueColor = usefulRealMark
+T.eq(#buttonLayers, 0,
+  "staged move-learning keeps native modal geometry without card overlap")
+T.eq(#usefulMarks, 5,
+  "staged move-learning still colours current and NEW move ink")
+usefulStack.states = nil
+
 usefulMarks = {}
 usefulTop = { usefulMoveInfoTextBox = true }
 PaletteFX.markTrueColor = function(x, y, w, h)
@@ -1403,8 +1490,9 @@ T.check(nativePotatoRects.box ~= nil,
 potatoCombined.release()
 
 -- Dramatic Shape 1.8.x publishes the same OverworldBattle module. Its staged
--- shot marker scopes the GAME replacement to active 3D battles, so disabling
--- 3D-BTL returns the ordinary native selector.
+-- shot marker scopes the transparent GAME replacement to active 3D battles.
+-- With 3D-BTL disabled the ordinary compact GAME cards still replace the
+-- oversized native panels, without relying on the voxel surface.
 local dramaticData = T.fixtures.fresh()
 Font.load(dramaticData)
 local dramaticCombined = T.sdk.loadMods({
@@ -1448,8 +1536,10 @@ dramaticBattle.phase = "moveSelect"
 dramaticBattle.dramaticShapeShot = nil
 dramaticBattle.letterboxWhite = nil
 local flatDramaticRects = dramaticModule.textRects(dramaticBattle)
-T.check(flatDramaticRects.box ~= nil and flatDramaticRects.moves ~= nil,
-  "Dramatic Shape with 3D-BTL off retains the ordinary GAME selector")
+T.eq(next(flatDramaticRects), nil,
+  "Dramatic Shape with 3D-BTL off omits obsolete native selector panels")
+T.eq(dramaticPatch.nativeGamePresentation(dramaticBattle), true,
+  "Dramatic Shape with 3D-BTL off uses compact in-frame GAME cards")
 dramaticCombined.release()
 
 -- Modern UI edits the final battle composition even when its full WIP battle
