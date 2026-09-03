@@ -1,5 +1,8 @@
 # Typed Move Colors
 
+> [!IMPORTANT]
+> **This standalone mod has been superseded by [Modern UI Suite](https://github.com/piftee/gen1recomp-modern-ui-suite).** It remains available for existing installs, but future fixes and features will be maintained in the suite. Disable this standalone mod before enabling the suite; the suite imports its saved settings automatically.
+
 Typed Move Colors can turn each move into a chamfered type-coloured button or
 leave the native interface intact and colour only its move-name text. Both
 presentations retain Pokémon Red, Blue and Yellow's original font. The default
